@@ -208,6 +208,7 @@
   <!-- Commodities Section -->
   <div class="section-header">
     <div class="section-title">📈 大宗商品 · 实时行情</div>
+    <span id="commTs" style="font-size:10px;color:var(--text-dim);"></span>
   </div>
   <div class="comm-grid" id="commGrid">
     <div class="comm-card" id="comm-gold">
@@ -591,7 +592,7 @@ async function fetchPolymarket() {
 async function refreshData() {
   const btn = document.getElementById('refreshBtn');
   btn.classList.add('spinning');
-  await Promise.all([fetchPolymarket(), fetchPizzaIndex()]);
+  await Promise.all([fetchPolymarket(), fetchPizzaIndex(), fetchCommodities()]);
   btn.classList.remove('spinning');
 }
 
@@ -599,88 +600,133 @@ async function init() {
   await Promise.all([fetchPolymarket(), fetchPizzaIndex(), fetchCommodities()]);
   // Auto-refresh every 5 minutes
   setInterval(() => { fetchPizzaIndex(); }, 5 * 60 * 1000);
-  // Commodity refresh every 10 minutes
   setInterval(() => { fetchCommodities(); }, 10 * 60 * 1000);
 }
 init();
 
-async function fetchCommodities() {
-  // Gold/Silver/Oil via Sina Finance, US10Y via Treasury.gov CSV
-  await Promise.allSettled([fetchSinaCommodities(), fetchTreasuryYield()]);
+// ============ COMMODITIES ============
+const COMM_CACHE_KEY = 'polyscan_commodities';
+const COMM_TS_KEY = 'polyscan_comm_ts';
+
+function getCachedComm() {
+  try {
+    const raw = localStorage.getItem(COMM_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
 }
 
-async function fetchSinaCommodities() {
+function setCachedComm(data) {
   try {
-    const r = await fetch('https://hq.sinajs.cn/list=hf_GC,hf_SI,hf_CL,hf_OIL', {
-      headers: { 'Referer': 'https://finance.sina.com.cn/', 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(10000)
-    });
-    const text = await r.text();
-    const lines = text.match(/hq_str_[^"]+="([^"]+)"/g) || [];
-    const keys = ['gold', 'silver', 'oil', 'brent'];
-    const prices = {};
-    lines.forEach((line, i) => {
-      const match = line.match(/="([^"]+)"/);
-      if (match) {
-        const f = match[1].split(',');
-        prices[keys[i]] = { current: parseFloat(f[0]), prevSettle: parseFloat(f[7]) };
+    localStorage.setItem(COMM_CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(COMM_TS_KEY, Date.now().toString());
+  } catch(e) {}
+}
+
+function updateCommDisplay(data) {
+  if (!data) return;
+  const fmt = (id, price, change) => {
+    const pEl = document.getElementById(id + '-price');
+    const cEl = document.getElementById(id + '-change');
+    if (pEl) pEl.textContent = price;
+    if (cEl) {
+      cEl.textContent = change;
+      const isUp = change.startsWith('+');
+      cEl.className = 'change ' + (isUp ? 'up' : 'down');
+    }
+  };
+  fmt('gold', data.gold.price, data.gold.change);
+  fmt('silver', data.silver.price, data.silver.change);
+  fmt('oil', data.oil.price, data.oil.change);
+  fmt('treasury', data.treasury.price, data.treasury.change);
+  const ts = document.getElementById('commTs');
+  if (ts && data.timestamp) {
+    const d = new Date(data.timestamp);
+    ts.textContent = '更新: ' + d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+  }
+}
+
+async function fetchCommodities() {
+  // 1. Load cached data immediately
+  const cached = getCachedComm();
+  updateCommDisplay(cached);
+
+  // 2. Fetch fresh data in background
+  await Promise.allSettled([fetchYahooComm(), fetchTreasuryYield()]);
+}
+
+async function fetchYahooComm() {
+  const proxies = [
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  ];
+
+  const symbols = { 'GC=F': 'gold', 'SI=F': 'silver', 'CL=F': 'oil' };
+  const data = cached || {};
+
+  for (const [sym, key] of Object.entries(symbols)) {
+    for (const proxyFn of proxies) {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=2d`;
+        const r = await fetch(proxyFn(url), { signal: AbortSignal.timeout(12000) });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const json = await r.json();
+        const result = json?.chart?.result?.[0];
+        if (!result) throw new Error('No result');
+        const meta = result.meta || {};
+        const price = meta.regularMarketPrice;
+        const prev = meta.chartPreviousClose || meta.previousClose;
+        if (!price) throw new Error('No price');
+        const change = prev ? ((price - prev) / prev * 100) : 0;
+        data[key] = {
+          price: '$' + price.toFixed(2),
+          change: (change >= 0 ? '+' : '') + change.toFixed(2) + '%'
+        };
+        break; // success, move to next symbol
+      } catch(e) {
+        console.warn('Yahoo', sym, 'via proxy failed:', e.message);
       }
-    });
-    // Gold
-    if (prices.gold) {
-      const { current, prevSettle } = prices.gold;
-      const chg = prevSettle ? ((current - prevSettle) / prevSettle * 100) : 0;
-      document.getElementById('gold-price').textContent = '$' + current.toFixed(2);
-      const el = document.getElementById('gold-change');
-      el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
-      el.className = 'change ' + (chg >= 0 ? 'up' : 'down');
     }
-    // Silver
-    if (prices.silver) {
-      const { current, prevSettle } = prices.silver;
-      const chg = prevSettle ? ((current - prevSettle) / prevSettle * 100) : 0;
-      document.getElementById('silver-price').textContent = '$' + current.toFixed(2);
-      const el = document.getElementById('silver-change');
-      el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
-      el.className = 'change ' + (chg >= 0 ? 'up' : 'down');
-    }
-    // WTI Oil
-    if (prices.oil) {
-      const { current, prevSettle } = prices.oil;
-      const chg = prevSettle ? ((current - prevSettle) / prevSettle * 100) : 0;
-      document.getElementById('oil-price').textContent = '$' + current.toFixed(2);
-      const el = document.getElementById('oil-change');
-      el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
-      el.className = 'change ' + (chg >= 0 ? 'up' : 'down');
-    }
-  } catch(e) { console.warn('Sina commodities error:', e); }
+  }
+
+  data.timestamp = Date.now();
+  setCachedComm(data);
+  updateCommDisplay(data);
 }
 
 async function fetchTreasuryYield() {
-  try {
-    const r = await fetch(
-      'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&download=true',
-      { signal: AbortSignal.timeout(15000) }
-    );
-    const text = await r.text();
-    const lines = text.trim().split('\n');
-    if (lines.length < 2) return;
-    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-    const ti = headers.findIndex(h => h === '10 Yr');
-    const lastLine = lines[lines.length - 1].split(',').map(v => v.replace(/"/g, '').trim());
-    const prevLine = lines.length >= 3 ? lines[lines.length - 2].split(',').map(v => v.replace(/"/g, '').trim()) : null;
-    const tenYr = parseFloat(lastLine[ti]);
-    const prevTenYr = prevLine ? parseFloat(prevLine[ti]) : null;
-    if (tenYr && !isNaN(tenYr)) {
-      document.getElementById('treasury-price').textContent = tenYr.toFixed(2) + '%';
-      if (prevTenYr && !isNaN(prevTenYr)) {
-        const chg = tenYr - prevTenYr;
-        const el = document.getElementById('treasury-change');
-        el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
-        el.className = 'change ' + (chg >= 0 ? 'up' : 'down');
-      }
+  for (const proxyFn of [
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  ]) {
+    try {
+      const url = 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&download=true';
+      const r = await fetch(proxyFn(url), { signal: AbortSignal.timeout(15000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const text = await r.text();
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) throw new Error('No data lines');
+      const hdrs = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+      const ti = hdrs.findIndex(h => h === '10 Yr');
+      if (ti < 0) throw new Error('No 10Yr column');
+      const cur = lines[lines.length - 1].split(',').map(v => v.replace(/"/g, '').trim());
+      const prev = lines.length >= 3 ? lines[lines.length - 2].split(',').map(v => v.replace(/"/g, '').trim()) : null;
+      const tenYr = parseFloat(cur[ti]);
+      const prevYr = prev ? parseFloat(prev[ti]) : null;
+      if (!tenYr || isNaN(tenYr)) throw new Error('Invalid tenYr');
+      const chg = (prevYr && !isNaN(prevYr)) ? (tenYr - prevYr) : 0;
+      const cached = getCachedComm() || {};
+      cached.treasury = {
+        price: tenYr.toFixed(2) + '%',
+        change: (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%'
+      };
+      cached.timestamp = Date.now();
+      setCachedComm(cached);
+      updateCommDisplay(cached);
+      return; // success
+    } catch(e) {
+      console.warn('Treasury via proxy failed:', e.message);
     }
-  } catch(e) { console.warn('Treasury yield error:', e); }
+  }
 }
 </script>
 </body>
