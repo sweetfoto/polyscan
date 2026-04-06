@@ -187,6 +187,29 @@ const PROXIES = [
   u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
 ];
 const COMM_NAMES = {gold:'🥇 黄金',silver:'🥈 白银',oil:'🛢️ WTI原油',treasury:'📊 美10年国债'};
+const BASE_URL='https://sweetfoto.github.io/polyscan';
+
+// Fetch bundled data.json from same origin (no CORS) - primary data source
+async function fetchDataJson(){
+  try{
+    const r=await fetch(BASE_URL+'/data.json',{cache:'no-cache',signal:AbortSignal.timeout(8000)});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    if(j.comm){
+      const data=lget('data')||{};
+      for(const k of['gold','silver','oil','treasury']){
+        if(j.comm[k]){data[k]=j.comm[k];}
+      }
+      lset('data',data);
+      lset('ts',Date.now().toString());
+    }
+    if(j.pizza&&j.pizza.defcon){
+      lset('pizza',{defcon:j.pizza.defcon,activity:j.pizza.activity||'--'});
+      lset('pcs_pizza_ts',Date.now().toString());
+    }
+    return true;
+  }catch(e){console.warn('data.json:',e.message);return false;}
+}
 const COMM_COLORS = {gold:{line:'#fbbf24',fill:'rgba(251,191,36,0.1)'},silver:{line:'#9ca3af',fill:'rgba(156,163,175,0.1)'},oil:{line:'#f97316',fill:'rgba(249,115,22,0.1)'},treasury:{line:'#a855f7',fill:'rgba(168,85,247,0.1)'}};
 const setDot = (id,c) => { const e=$(id); if(e) e.className='dot '+c; };
 
@@ -481,13 +504,16 @@ async function doRefresh(){
 }
 
 async function init(){
-  // 1. Show cached data IMMEDIATELY (no waiting)
+  // 第1步：从 GitHub Pages 快速加载已打包的数据（无 CORS 问题）
+  const hasData=await fetchDataJson();
+  // 第2步：立即显示（缓存数据，瞬间完成）
   updateCommUI();
   updateChart(selectedComm);
   restorePolyCache();
   restorePizzaCache();
-  // 2. Then fetch fresh data in background
+  // 第3步：后台静默尝试刷新外部数据（失败不影响显示）
   await Promise.allSettled([fetchPoly(),fetchPizza(),fetchAllComm()]);
+  // 第4步：每30分钟自动刷新
   setInterval(()=>{fetchPizza();},REFRESH_MS);
   setInterval(()=>{fetchAllComm();},REFRESH_MS);
 }
