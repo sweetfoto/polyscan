@@ -204,7 +204,7 @@
   </div>
 
   <div class="filter-row" id="filterRow">
-    <div class="filter-chip active" onclick="setFilter('all')">🔥 热门</div>
+    <div class="filter-chip active" onclick="setFilter('hot')">🔥 热门</div>
     <div class="filter-chip" onclick="setFilter('geopolitics')">⚔️ 地缘政治</div>
     <div class="filter-chip" onclick="setFilter('politics')">🗳️ 政治</div>
     <div class="filter-chip" onclick="setFilter('crypto')">₿ 加密</div>
@@ -235,13 +235,35 @@
 
 <script>
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 let allMarkets = [];
 let currentFilter = 'all';
 let pizzaDataCache = null;
+let fetchAttempts = 0;
+const MAX_ATTEMPTS = 3;
 
-function proxyUrl(url) {
-  return CORS_PROXY + encodeURIComponent(url);
+function tryFetch(url, proxies) {
+  if (!proxies || proxies.length === 0) return Promise.reject('No proxies available');
+  const proxy = proxies[0];
+  return fetch(proxy(url), { signal: AbortSignal.timeout(15000) }).then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }).catch(e => {
+    console.warn('Proxy failed:', proxies[0].name || 'anonymous', e.message);
+    if (proxies.length > 1) {
+      return tryFetch(url, proxies.slice(1));
+    }
+    throw e;
+  });
+}
+
+function polymarketProxy(url) {
+  // Try multiple CORS proxies in order
+  const proxies = [
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+  ];
+  return proxies[0](url);
 }
 
 function timeAgo(date) {
@@ -317,50 +339,57 @@ function updatePizzaUI(data) {
 
 async function fetchPizzaIndex() {
   try {
-    // Try to fetch from pizzint.watch via proxy
+    // Try multiple sources for pizza data
     let fetched = false;
 
-    try {
-      const r = await fetch(proxyUrl('https://pizzint.watch/'));
-      if (r.ok) {
-        const text = await r.text();
-        // Parse DEFCON level
-        const defconMatch = text.match(/DEFCON[:\s]*(\d)/i) || text.match(/defcon["\s:]+(\d)/i);
-        const defcon = defconMatch ? parseInt(defconMatch[1]) : null;
-        if (defcon) {
-          fetched = true;
-          const defconNames = {5:'和平时期',4:'正常活跃',3:'中度活跃',2:'高度活跃',1:'战争临界'};
-          const stores = {};
-          const storeMatches = text.match(/(?:District[\s_]*Pizza|We[\s_]*The[\s_]*Pizza|Extreme[\s_]*Pizza)[^0-9]*(\d{2,3})%/gi);
-          if (storeMatches) {
-            stores.district = storeMatches[0] ? storeMatches[0].match(/\d+/)[0] : null;
-            stores.wethepizza = storeMatches[1] ? storeMatches[1].match(/\d+/)[0] : null;
-            stores.extreme = storeMatches[2] ? storeMatches[2].match(/\d+/)[0] : null;
-          }
-          pizzaDataCache = {
-            defcon,
-            defconName: defconNames[defcon],
-            activity: `周边披萨店活跃度${defcon <= 2 ? '极高' : defcon <= 3 ? '偏高' : '正常'}`,
-            stores
-          };
-        }
-      }
-    } catch(e) {}
+    // Try @PentagonPizzaReport via various proxies
+    const sources = [
+      { url: 'https://pizzint.watch/', proxy: u => `https://corsproxy.io/?${encodeURIComponent(u)}` },
+      { url: 'https://pizzint.watch/', proxy: u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
+    ];
 
-    if (!fetched) {
-      // Fallback: use cached data or known recent values
-      if (!pizzaDataCache) {
-        pizzaDataCache = {
-          defcon: 4,
-          defconName: '正常活跃',
-          activity: '近期（4月4日）有报告称周边披萨店订单飙升',
-          stores: { district: '---', wethepizza: '---', extreme: '---' },
-          alert: '⚠️ 4月4日 Pentagon Pizza Report 报告订单飙升'
-        };
-      }
+    for (const src of sources) {
+      try {
+        const r = await fetch(src.proxy(src.url), { signal: AbortSignal.timeout(8000) });
+        if (r.ok) {
+          const text = await r.text();
+          const defconMatch = text.match(/DEFCON[:\s]*(\d)/i) || text.match(/defcon["\s:]+(\d)/i);
+          const defcon = defconMatch ? parseInt(defconMatch[1]) : null;
+          if (defcon && defcon >= 1 && defcon <= 5) {
+            fetched = true;
+            const defconNames = {5:'和平时期',4:'正常活跃',3:'中度活跃',2:'高度活跃',1:'战争临界'};
+            const stores = {};
+            const dm = text.match(/District[^0-9]*?(\d{2,3})%/i);
+            const wm = text.match(/We[\s_]+The[\s_]+Pizza[^0-9]*?(\d{2,3})%/i);
+            const em = text.match(/Extreme[^0-9]*?(\d{2,3})%/i);
+            stores.district = dm ? dm[1] : null;
+            stores.wethepizza = wm ? wm[1] : null;
+            stores.extreme = em ? em[1] : null;
+            pizzaDataCache = {
+              defcon,
+              defconName: defconNames[defcon],
+              activity: `周边披萨店活跃度${defcon <= 2 ? '极高' : defcon <= 3 ? '偏高' : '正常'}`,
+              stores
+            };
+            updatePizzaUI(pizzaDataCache);
+            setStatus('pizzaStatus', defcon <= 2 ? 'red' : defcon <= 3 ? 'orange' : 'green');
+            return;
+          }
+        }
+      } catch(e) { /* try next source */ }
     }
 
+    // Fallback data
+    if (!pizzaDataCache) {
+      pizzaDataCache = {
+        defcon: 4,
+        defconName: '正常活跃',
+        activity: '披萨指数数据暂时无法获取，请手动查看 @PentagonPizzaReport 或 pizzint.watch',
+        stores: { district: '--', wethepizza: '--', extreme: '--' }
+      };
+    }
     updatePizzaUI(pizzaDataCache);
+    setStatus('pizzaStatus', 'orange');
   } catch(e) {
     console.warn('Pizza fetch error:', e);
     if (!pizzaDataCache) {
@@ -375,9 +404,10 @@ async function fetchPizzaIndex() {
   }
 }
 
-function getCatColor(cats) {
-  if (!cats) return '';
-  const s = cats.toString().toLowerCase();
+function getCatColor(tags) {
+  if (!tags) return '';
+  const slugs = (tags || []).map(t => (typeof t === 'object' ? (t.slug || '') : (t || ''))).join(' ');
+  const s = slugs.toLowerCase();
   if (s.includes('politics')) return 'cat-politics';
   if (s.includes('geopolitics')) return 'cat-geopolitics';
   if (s.includes('world') && !s.includes('crypto')) return 'cat-world';
@@ -389,9 +419,10 @@ function getCatColor(cats) {
   return '';
 }
 
-function getCatName(cats) {
-  if (!cats) return '';
-  const s = cats.toString().toLowerCase();
+function getCatName(tags) {
+  if (!tags) return '';
+  const slugs = (tags || []).map(t => (typeof t === 'object' ? (t.slug || '') : (t || ''))).join(' ');
+  const s = slugs.toLowerCase();
   if (s.includes('politics')) return '政治';
   if (s.includes('geopolitics')) return '地缘';
   if (s.includes('world')) return '国际';
@@ -463,11 +494,11 @@ function setFilter(tag) {
 
 function filterMarkets() {
   let filtered = allMarkets;
-  if (currentFilter === 'hot') filtered = allMarkets.slice(0, 20);
+  if (currentFilter === 'hot') filtered = allMarkets.slice(0, 30);
   else if (currentFilter !== 'all') {
     filtered = allMarkets.filter(m => {
-      const tags = (m.tags || []).map(t => (typeof t === 'string' ? t : t.slug || '').toLowerCase());
-      return tags.some(t => t.includes(currentFilter));
+      const tags = (m.tags || []).map(t => (typeof t === 'object' ? (t.slug || '') : (t || ''))).join(' ').toLowerCase();
+      return tags.includes(currentFilter);
     });
   }
   renderMarkets(filtered.slice(0, 30));
@@ -475,17 +506,25 @@ function filterMarkets() {
 
 async function fetchPolymarket() {
   setStatus('polyStatus', 'orange');
+  const errEl = document.getElementById('errorDisplay');
+  errEl.style.display = 'none';
   try {
-    const resp = await fetch(proxyUrl(`${POLYMARKET_API}/events?closed=false&limit=50&order=volume24hr&ascending=false`));
-    if (!resp.ok) throw new Error('API error');
-    const events = await resp.json();
+    const url = `${POLYMARKET_API}/events?closed=false&limit=50&order=volume24hr&ascending=false`;
+    const events = await tryFetch(url, [
+      u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+      u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+      u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    ]);
 
     let markets = [];
     for (const ev of events) {
       for (const m of (ev.markets || [])) {
+        // Skip closed/resolved markets
+        if (m.closed || m.resolvedBy) continue;
         m.title = ev.title;
         m.tags = ev.tags || [];
         m.slug = ev.slug || m.slug || '';
+        m.eventClosed = ev.closed || false;
         markets.push(m);
       }
     }
@@ -502,7 +541,8 @@ async function fetchPolymarket() {
     console.warn('Polymarket fetch error:', e);
     setStatus('polyStatus', 'red');
     document.getElementById('errorDisplay').style.display = 'block';
-    document.getElementById('errorDisplay').textContent = 'Polymarket 数据获取失败，请检查网络或稍后重试。错误: ' + e.message;
+    document.getElementById('errorDisplay').textContent = '⚠️ Polymarket 数据暂时无法获取（网络/CORS 限制），请稍后点击右上角「刷新」按钮重试。';
+    document.getElementById('marketList').innerHTML = '<div class="no-data">数据加载失败，请点击右上角刷新按钮重试</div>';
   }
 }
 
