@@ -70,6 +70,17 @@
     .pizza-alert { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 10px; padding: 10px 14px; font-size: 12px; margin-top: 10px; color: var(--red); font-weight: 600; }
     .pizza-note { font-size: 11px; color: var(--text-dim); margin-top: 8px; }
 
+    /* Commodities Section */
+    .comm-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin: 14px 0 0; }
+    .comm-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 8px; text-align: center; }
+    .comm-card .icon { font-size: 20px; display: block; margin-bottom: 4px; }
+    .comm-card .label { font-size: 10px; color: var(--text-dim); display: block; margin-bottom: 3px; }
+    .comm-card .price { font-size: 14px; font-weight: 800; display: block; }
+    .comm-card .change { font-size: 10px; font-weight: 600; display: block; margin-top: 2px; }
+    .comm-card .change.up { color: var(--green); }
+    .comm-card .change.down { color: var(--red); }
+    .comm-treasury { background: linear-gradient(135deg, #1a1040, #0d1f3c); border-color: rgba(108,99,255,0.3); }
+
     /* Polymarket Section */
     .section-header { display: flex; justify-content: space-between; align-items: center; margin: 20px 0 10px; padding: 0 2px; }
     .section-title { font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; }
@@ -191,6 +202,37 @@
     </div>
     <div class="pizza-note" id="pizzaNote">
       数据来源：Pentagon Pizza Report (@PenPizzaReport) · 每5分钟自动刷新
+    </div>
+  </div>
+
+  <!-- Commodities Section -->
+  <div class="section-header">
+    <div class="section-title">📈 大宗商品 · 实时行情</div>
+  </div>
+  <div class="comm-grid" id="commGrid">
+    <div class="comm-card" id="comm-gold">
+      <span class="icon">🥇</span>
+      <span class="label">黄金</span>
+      <span class="price" id="gold-price">--</span>
+      <span class="change up" id="gold-change">--</span>
+    </div>
+    <div class="comm-card" id="comm-silver">
+      <span class="icon">🥈</span>
+      <span class="label">白银</span>
+      <span class="price" id="silver-price">--</span>
+      <span class="change up" id="silver-change">--</span>
+    </div>
+    <div class="comm-card" id="comm-oil">
+      <span class="icon">🛢️</span>
+      <span class="label">WTI原油</span>
+      <span class="price" id="oil-price">--</span>
+      <span class="change up" id="oil-change">--</span>
+    </div>
+    <div class="comm-card comm-treasury" id="comm-treasury">
+      <span class="icon">📊</span>
+      <span class="label">美10年期</span>
+      <span class="price" id="treasury-price">--</span>
+      <span class="change up" id="treasury-change">--</span>
     </div>
   </div>
 
@@ -554,11 +596,51 @@ async function refreshData() {
 }
 
 async function init() {
-  await Promise.all([fetchPolymarket(), fetchPizzaIndex()]);
+  await Promise.all([fetchPolymarket(), fetchPizzaIndex(), fetchCommodities()]);
   // Auto-refresh every 5 minutes
   setInterval(() => { fetchPizzaIndex(); }, 5 * 60 * 1000);
+  // Commodity refresh every 10 minutes
+  setInterval(() => { fetchCommodities(); }, 10 * 60 * 1000);
 }
 init();
+
+async function fetchCommodities() {
+  // Yahoo Finance tickers via CORS proxy
+  const tickers = [
+    { id: 'gold', symbol: 'GC=F', label: 'gold-price', change: 'gold-change', format: v => '$' + v.toFixed(2), suffix: '' },
+    { id: 'silver', symbol: 'SI=F', label: 'silver-price', change: 'silver-change', format: v => '$' + v.toFixed(2), suffix: '' },
+    { id: 'oil', symbol: 'CL=F', label: 'oil-price', change: 'oil-change', format: v => '$' + v.toFixed(2), suffix: '' },
+    { id: 'treasury', symbol: '^TNX', label: 'treasury-price', change: 'treasury-change', format: v => v.toFixed(2) + '%', suffix: '' },
+  ];
+
+  const proxy = u => `https://corsproxy.io/?${encodeURIComponent(u)}`;
+
+  for (const t of tickers) {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t.symbol)}?interval=1d&range=2d`;
+      const r = await fetch(proxy(url), { signal: AbortSignal.timeout(10000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const result = data.chart && data.chart.result && data.chart.result[0];
+      if (!result) throw new Error('No result');
+      const meta = result.meta;
+      const currentPrice = meta.regularMarketPrice || meta.previousClose;
+      const prevClose = meta.chartPreviousClose || meta.previousClose;
+      const change = currentPrice - prevClose;
+      const changePct = prevClose ? (change / prevClose * 100) : 0;
+
+      document.getElementById(t.label).textContent = t.format(currentPrice);
+      const changeEl = document.getElementById(t.change);
+      const sign = change >= 0 ? '+' : '';
+      changeEl.textContent = sign + changePct.toFixed(2) + '%';
+      changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
+    } catch(e) {
+      console.warn('Commodity fetch error for', t.id, e.message);
+      document.getElementById(t.label).textContent = '--';
+      document.getElementById(t.change).textContent = '--';
+    }
+  }
+}
 </script>
 </body>
 </html>
