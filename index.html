@@ -51,7 +51,7 @@
     .refresh-btn:active { background:var(--card-hover); }
     .refresh-btn svg { width:10px; height:10px; }
     .refresh-btn.spinning svg { animation:spin 0.8s linear infinite; }
-    .comm-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:5px; }
+    .comm-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; } @media(max-width:600px){ .comm-grid{grid-template-columns:repeat(2,1fr);gap:4px} }
     .comm-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px 5px; text-align:center; cursor:pointer; transition:all 0.2s; }
     .comm-card:active { transform:scale(0.95); }
     .comm-card.sel { border-color:var(--accent); background:rgba(108,99,255,0.1); }
@@ -145,6 +145,10 @@
     <div class="comm-card" id="cc-silver" onclick="selComm('silver')"><span class="comm-icon">🥈</span><span class="comm-label">白银</span><span class="comm-price" id="silver-p">--</span><span class="comm-chg chg-up" id="silver-c">--</span></div>
     <div class="comm-card" id="cc-oil" onclick="selComm('oil')"><span class="comm-icon">🛢️</span><span class="comm-label">WTI原油</span><span class="comm-price" id="oil-p">--</span><span class="comm-chg chg-up" id="oil-c">--</span></div>
     <div class="comm-card" id="cc-treasury" onclick="selComm('treasury')"><span class="comm-icon">📊</span><span class="comm-label">美10年</span><span class="comm-price" id="treasury-p">--</span><span class="comm-chg chg-up" id="treasury-c">--</span></div>
+    <div class="comm-card" id="cc-btc" onclick="selComm('btc')"><span class="comm-icon">₿</span><span class="comm-label">比特币</span><span class="comm-price" id="btc-p">--</span><span class="comm-chg chg-up" id="btc-c">--</span></div>
+    <div class="comm-card" id="cc-eth" onclick="selComm('eth')"><span class="comm-icon">Ξ</span><span class="comm-label">以太坊</span><span class="comm-price" id="eth-p">--</span><span class="comm-chg chg-up" id="eth-c">--</span></div>
+    <div class="comm-card" id="cc-vix" onclick="selComm('vix')"><span class="comm-icon">🌡️</span><span class="comm-label">VIX恐慌</span><span class="comm-price" id="vix-p">--</span><span class="comm-chg chg-up" id="vix-c">--</span></div>
+    <div class="comm-card" id="cc-dxy" onclick="selComm('dxy')"><span class="comm-icon">💵</span><span class="comm-label">美元指数</span><span class="comm-price" id="dxy-p">--</span><span class="comm-chg chg-up" id="dxy-c">--</span></div>
   </div>
 
   <div class="chart-wrap">
@@ -186,10 +190,25 @@ const PROXIES = [
   u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
   u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
 ];
-const COMM_NAMES = {gold:'🥇 黄金',silver:'🥈 白银',oil:'🛢️ WTI原油',treasury:'📊 美10年国债'};
+const COMM_NAMES = {gold:'🥇 黄金',silver:'🥈 白银',oil:'🛢️ WTI原油',treasury:'📊 美10年',btc:'₿ 比特币',eth:'Ξ 以太坊',vix:'🌡️ VIX恐慌',dxy:'💵 美元指数'};
 const BASE_URL='https://sweetfoto.github.io/polyscan';
 
 // Fetch bundled data.json from same origin (no CORS) - primary data source
+
+// Fetch crypto prices DIRECTLY from CoinGecko (CORS enabled, no proxy needed in browser)
+async function fetchCrypto(){
+  try{
+    const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true',{signal:AbortSignal.timeout(10000)});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    const data=lget('data')||{};
+    if(j.bitcoin){data.btc={price:j.bitcoin.usd,change:j.bitcoin.usd_24h_change||0};pushHist('btc',j.bitcoin.usd);}
+    if(j.ethereum){data.eth={price:j.ethereum.usd,change:j.ethereum.usd_24h_change||0};pushHist('eth',j.ethereum.usd);}
+    lset('data',data);
+    lset('ts',Date.now().toString());
+    return true;
+  }catch(e){console.warn('Crypto fetch err:',e.message);return false;}
+}
 async function fetchDataJson(){
   try{
     const r=await fetch(BASE_URL+'/data.json',{cache:'no-cache',signal:AbortSignal.timeout(8000)});
@@ -197,7 +216,7 @@ async function fetchDataJson(){
     const j=await r.json();
     if(j.comm){
       const data=lget('data')||{};
-      for(const k of['gold','silver','oil','treasury']){
+      for(const k of['gold','silver','oil','treasury','btc','eth','vix','dxy']){
         if(j.comm[k]){data[k]=j.comm[k];}
       }
       lset('data',data);
@@ -210,7 +229,7 @@ async function fetchDataJson(){
     return true;
   }catch(e){console.warn('data.json:',e.message);return false;}
 }
-const COMM_COLORS = {gold:{line:'#fbbf24',fill:'rgba(251,191,36,0.1)'},silver:{line:'#9ca3af',fill:'rgba(156,163,175,0.1)'},oil:{line:'#f97316',fill:'rgba(249,115,22,0.1)'},treasury:{line:'#a855f7',fill:'rgba(168,85,247,0.1)'}};
+const COMM_COLORS = {gold:{line:'#fbbf24',fill:'rgba(251,191,36,0.1)'},silver:{line:'#9ca3af',fill:'rgba(156,163,175,0.1)'},oil:{line:'#f97316',fill:'rgba(249,115,22,0.1)'},treasury:{line:'#a855f7',fill:'rgba(168,85,247,0.1)'},btc:{line:'#f7931a',fill:'rgba(247,147,26,0.1)'},eth:{line:'#627eea',fill:'rgba(98,126,234,0.1)'},vix:{line:'#ef4444',fill:'rgba(239,68,68,0.1)'},dxy:{line:'#22c55e',fill:'rgba(34,197,94,0.1)'} };
 const setDot = (id,c) => { const e=$(id); if(e) e.className='dot '+c; };
 
 function lget(k){try{return JSON.parse(localStorage.getItem('pcs_'+k));}catch(e){return null;}}
@@ -225,23 +244,27 @@ function pushHist(k,v){
   lset('h_'+k,h);
 }
 function getHist(k){return lget('h_'+k)||[];}
-function fmtP(k,v){return k==='treasury'?v.toFixed(3)+'%':'$'+v.toFixed(2);}
+function fmtP(k,v){if(k==='treasury')return v.toFixed(3)+'%';if(k==='vix'||k==='dxy')return v.toFixed(2);if(k==='btc'||k==='eth')return'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});return'$'+v.toFixed(2);}
 
 function updateTime(){$('lu').textContent=fmtH(new Date());}
 setInterval(updateTime,30000);updateTime();
 
 // 最后一次成功获取的数据（网络全挂时使用）
 const FALLBACK = {
-  gold:    {price:4691.10, change:+0.24},
-  silver:  {price:72.62,  change:-0.42},
-  oil:     {price:110.83, change:-0.64},
-  treasury:{price:4.350,  change:+0.02},
+  gold:    {price:4691.10, change:+0.24, unit:'USD/oz'},
+  silver:  {price:72.62,  change:-0.42, unit:'USD/oz'},
+  oil:     {price:110.83, change:-0.64, unit:'USD/bbl'},
+  treasury:{price:4.350,  change:+0.02, unit:'%'},
+  btc:     {price:67420.00, change:+1.85, unit:'USD'},
+  eth:     {price:3520.00,  change:+2.31, unit:'USD'},
+  vix:     {price:18.42,   change:-0.33, unit:''},
+  dxy:     {price:104.20,  change:-0.15, unit:''},
 };
 
 function updateCommUI(){
   const data=lget('data')||FALLBACK;
   const ts=parseInt(localStorage.getItem('pcs_ts')||'0');
-  for(const k of['gold','silver','oil','treasury']){
+  for(const k of['gold','silver','oil','treasury','btc','eth','vix','dxy']){
     const d=data[k]||FALLBACK[k];
     if(!d)continue;
     const pe=$(k+'-p');const ce=$(k+'-c');
@@ -512,10 +535,11 @@ async function init(){
   restorePolyCache();
   restorePizzaCache();
   // 第3步：后台静默尝试刷新外部数据（失败不影响显示）
-  await Promise.allSettled([fetchPoly(),fetchPizza(),fetchAllComm()]);
+  await Promise.allSettled([fetchPoly(),fetchPizza(),fetchAllComm(),fetchCrypto()]);
   // 第4步：每30分钟自动刷新
   setInterval(()=>{fetchPizza();},REFRESH_MS);
   setInterval(()=>{fetchAllComm();},REFRESH_MS);
+  setInterval(()=>{fetchCrypto();},REFRESH_MS);
 }
 init();
 </script>
