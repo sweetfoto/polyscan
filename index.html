@@ -317,18 +317,20 @@ async function fetchPizza(){
         if(defcon&&defcon>=1&&defcon<=5){
           const names={5:'和平时期',4:'正常活跃',3:'中度活跃',2:'高度活跃',1:'战争临界'};
           const colors={5:'#10b981',4:'#10b981',3:'orange',2:'#ef4444',1:'#ef4444'};
+          const activity=defcon<=2?'⚠️ 高度活跃':defcon<=3?'略有上升':'正常';
           $('pDefcon').textContent='DEFCON '+defcon;
           $('defconNum').textContent=defcon;
           $('defconNum').style.color=colors[defcon];
           $('defconName').textContent=names[defcon];
           $('defconBar').style.width=((6-defcon)/5*100)+'%';
           $('defconBar').style.background=colors[defcon];
-          $('pizzaActivity').textContent=defcon<=2?'⚠️ 高度活跃':defcon<=3?'略有上升':'正常';
+          $('pizzaActivity').textContent=activity;
           const al=$('pizzaAlert');
           if(defcon<=2){al.style.display='block';al.textContent='⚠️ 披萨指数异常攀升！';al.style.color='var(--red)';al.style.background='rgba(239,68,68,0.1)';al.style.borderColor='rgba(239,68,68,0.3)';}
           else if(defcon<=3){al.style.display='block';al.textContent='⚡ 活动偏高，注意观察';al.style.color='orange';al.style.background='rgba(255,165,0,0.1)';al.style.borderColor='rgba(255,165,0,0.3)';}
           else al.style.display='none';
           setDot('dPizza',defcon<=2?'red':defcon<=3?'orange':'green');
+          lset('pizza',{defcon,activity});
           return;
         }
       }catch(e){}
@@ -356,8 +358,41 @@ async function fetchPoly(){
       }
     }
     markets.sort((a,b)=>parseFloat(b.volume24hr||0)-parseFloat(a.volume24hr||0));
-    allMarkets=markets;setDot('dPoly','green');filterMarkets();
-  }catch(e){console.warn('Poly error:',e);setDot('dPoly','red');$('marketList').innerHTML='<div class="no-data">Poly数据加载失败，请检查网络</div>';}
+    allMarkets=markets;
+    lset('poly',markets);lset('poly_ts',Date.now());
+    setDot('dPoly','green');filterMarkets();
+  }catch(e){console.warn('Poly error:',e);setDot('dPoly','red');}
+}
+
+function restorePolyCache(){
+  const cached=lget('poly');const ts=parseInt(localStorage.getItem('pcs_poly_ts')||'0');
+  if(cached&&cached.length>0){
+    allMarkets=cached;
+    filterMarkets();
+    if(ts>0){
+      const d=new Date(ts);
+      $('lu').textContent='缓存 '+d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+    }
+  } else {
+    $('marketList').innerHTML='<div class="loading"><div class="spinner"></div>首次加载...</div>';
+  }
+}
+
+function restorePizzaCache(){
+  const cached=lget('pizza');
+  if(cached){
+    const defcon=cached.defcon||4;
+    const names={5:'和平时期',4:'正常活跃',3:'中度活跃',2:'高度活跃',1:'战争临界'};
+    const colors={5:'#10b981',4:'#10b981',3:'orange',2:'#ef4444',1:'#ef4444'};
+    $('pDefcon').textContent='DEFCON '+defcon;
+    $('defconNum').textContent=defcon;
+    $('defconNum').style.color=colors[defcon]||'#10b981';
+    $('defconName').textContent=names[defcon]||'正常';
+    $('defconBar').style.width=((6-defcon)/5*100)+'%';
+    $('defconBar').style.background=colors[defcon]||'#10b981';
+    $('pizzaActivity').textContent=cached.activity||'--';
+    setDot('dPizza',defcon<=2?'red':defcon<=3?'orange':'green');
+  }
 }
 
 function tagColor(tags){
@@ -414,8 +449,13 @@ async function doRefresh(){
 }
 
 async function init(){
-  updateCommUI();updateChart(selectedComm);
-  await Promise.all([fetchPoly(),fetchPizza(),fetchAllComm()]);
+  // 1. Show cached data IMMEDIATELY (no waiting)
+  updateCommUI();
+  updateChart(selectedComm);
+  restorePolyCache();
+  restorePizzaCache();
+  // 2. Then fetch fresh data in background
+  await Promise.allSettled([fetchPoly(),fetchPizza(),fetchAllComm()]);
   setInterval(()=>{fetchPizza();},REFRESH_MS);
   setInterval(()=>{fetchAllComm();},REFRESH_MS);
 }
