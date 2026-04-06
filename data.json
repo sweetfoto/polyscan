@@ -1,12 +1,16 @@
 {
   "comm": {
-    "gold":   {"price": 4691.10, "change": +0.24, "unit": "USD/oz" },
-    "silver": {"price": 72.62,   "change": -0.42, "unit": "USD/oz" },
-    "oil":    {"price": 110.83,  "change": -0.64, "unit": "USD/bbl"},
-    "treasury":{"price": 4.35,   "change": +0.02, "unit": "%"    }
+    "gold":     {"price": 4691.10, "change": +0.24, "unit": "USD/oz"},
+    "silver":   {"price": 72.62,   "change": -0.42, "unit": "USD/oz"},
+    "oil":      {"price": 110.83,  "change": -0.64, "unit": "USD/bbl"},
+    "treasury": {"price": 4.350,   "change": +0.02, "unit": "%"},
+    "btc":      {"price": 67420.00,"change": +1.85, "unit": "USD"},
+    "eth":      {"price": 3520.00, "change": +2.31, "unit": "USD"},
+    "vix":      {"price": 18.42,   "change": -0.33, "unit": ""},
+    "dxy":      {"price": 104.20,  "change": -0.15, "unit": ""}
   },
-  "pizza": {"defcon": 4, "activity": "正常", "note": "最后成功刷新时间 2026-04-06" },
+  "pizza": {"defcon": 4, "activity": "正常"},
   "poly":  [],
-  "updated": "2026-04-06T12:00:00Z",
-  "note": "此文件由 PolyScan 自动生成。部署后页面直接读取此文件，绕过 CORS 限制，速度极快。后台自动尝试更新失败时保留此数据。"
+  "updated": "2026-04-07T00:25:00+08:00",
+  "note": "数据为参考值。BTC/ETH 由 CoinGecko 实时更新(浏览器直连)。其他品种需手动更新此文件。"
 }
