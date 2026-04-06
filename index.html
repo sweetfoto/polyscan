@@ -3,731 +3,423 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Polymarket + 披萨指数 实时监控</title>
+  <title>PolyScan 实时监控</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    :root {
-      --bg: #0a0e17;
-      --card: #111827;
-      --card-hover: #1a2235;
-      --accent: #6c63ff;
-      --accent2: #00d4aa;
-      --accent3: #ff6b6b;
-      --accent4: #ffd93d;
-      --green: #10b981;
-      --red: #ef4444;
-      --text: #e5e7eb;
-      --text-dim: #9ca3af;
-      --border: #1f2937;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; padding-bottom: 40px; }
-    .container { max-width: 540px; margin: 0 auto; padding: 0 14px; }
-
-    header { padding: 24px 0 16px; display: flex; align-items: center; justify-content: space-between; }
-    .logo { font-size: 20px; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .last-update { font-size: 11px; color: var(--text-dim); }
-    .last-update .time { color: var(--accent2); font-weight: 600; }
-    .badge { display: inline-block; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 20px; vertical-align: middle; margin-left: 6px; }
-
-    /* Status bar */
-    .status-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-    .status-chip { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 11px; display: flex; align-items: center; gap: 5px; }
-    .status-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
-    .dot.green { background: var(--green); }
-    .dot.red { background: var(--red); }
-    .dot.orange { background: orange; }
-    .dot.yellow { background: var(--accent4); }
-    .dot.pulse { animation: pulse 1.5s infinite; }
+    :root { --bg:#0a0e17;--card:#111827;--card-hover:#1a2235;--accent:#6c63ff;--accent2:#00d4aa;--green:#10b981;--red:#ef4444;--text:#e5e7eb;--text-dim:#9ca3af;--border:#1f2937; }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,sans-serif; font-size:14px; line-height:1.6; padding-bottom:40px; }
+    .container { max-width:540px; margin:0 auto; padding:0 14px; }
+    header { padding:18px 0 10px; display:flex; align-items:center; justify-content:space-between; }
+    .logo { font-size:18px; font-weight:800; background:linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .badge { display:inline-block; background:var(--accent); color:#fff; font-size:9px; font-weight:700; padding:2px 8px; border-radius:20px; }
+    .last-update { font-size:11px; color:var(--text-dim); }
+    .last-update span { color:var(--accent2); font-weight:600; }
+    .status-bar { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+    .status-chip { background:var(--card); border:1px solid var(--border); border-radius:20px; padding:4px 10px; font-size:10px; display:flex; align-items:center; gap:4px; }
+    .dot { width:5px; height:5px; border-radius:50%; }
+    .dot.green { background:var(--green); }
+    .dot.red { background:var(--red); }
+    .dot.orange { background:orange; }
+    .dot.pulse { animation:pulse 1.5s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-
-    /* Loading */
-    .loading { text-align: center; padding: 40px; color: var(--text-dim); font-size: 13px; }
-    .loading-spinner { width: 30px; height: 30px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+    .spinner { width:22px; height:22px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 8px; }
     @keyframes spin { to{transform:rotate(360deg)} }
-
-    /* Error */
-    .error-msg { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 10px; padding: 12px 16px; font-size: 12px; color: var(--red); margin: 8px 0; }
-
-    /* Pizza Section */
-    .pizza-hero { background: linear-gradient(135deg, #1a1040, #0d1f3c); border: 1px solid rgba(108,99,255,0.3); border-radius: 16px; padding: 20px; margin: 14px 0; position: relative; overflow: hidden; }
-    .pizza-hero::before { content: '🍕'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%); font-size: 60px; opacity: 0.15; }
-    .pizza-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
-    .pizza-title span { font-size: 11px; background: rgba(108,99,255,0.2); color: #a5a0ff; padding: 2px 8px; border-radius: 8px; font-weight: 500; }
-    .defcon-display { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
-    .defcon-level { font-size: 40px; font-weight: 900; font-family: 'Courier New', monospace; }
-    .defcon-label { font-size: 11px; color: var(--text-dim); }
-    .defcon-label .level-name { font-size: 14px; font-weight: 700; color: var(--text); display: block; margin-bottom: 2px; }
-    .defcon-bar { flex: 1; background: var(--border); border-radius: 6px; height: 8px; overflow: hidden; }
-    .defcon-fill { height: 100%; border-radius: 6px; transition: width 0.5s ease; }
-    .pizza-stores { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
-    .store-item { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 10px 8px; text-align: center; }
-    .store-item .name { font-size: 11px; font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .store-item .busy-pct { font-size: 18px; font-weight: 800; }
-    .store-item .sub { font-size: 9px; color: var(--text-dim); }
-    .busy-high { color: var(--red); }
-    .busy-mid { color: orange; }
-    .busy-low { color: var(--green); }
-    .pizza-alert { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 10px; padding: 10px 14px; font-size: 12px; margin-top: 10px; color: var(--red); font-weight: 600; }
-    .pizza-note { font-size: 11px; color: var(--text-dim); margin-top: 8px; }
-
-    /* Commodities Section */
-    .comm-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin: 14px 0 0; }
-    .comm-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 8px; text-align: center; }
-    .comm-card .icon { font-size: 20px; display: block; margin-bottom: 4px; }
-    .comm-card .label { font-size: 10px; color: var(--text-dim); display: block; margin-bottom: 3px; }
-    .comm-card .price { font-size: 14px; font-weight: 800; display: block; }
-    .comm-card .change { font-size: 10px; font-weight: 600; display: block; margin-top: 2px; }
-    .comm-card .change.up { color: var(--green); }
-    .comm-card .change.down { color: var(--red); }
-    .comm-treasury { background: linear-gradient(135deg, #1a1040, #0d1f3c); border-color: rgba(108,99,255,0.3); }
-
-    /* Polymarket Section */
-    .section-header { display: flex; justify-content: space-between; align-items: center; margin: 20px 0 10px; padding: 0 2px; }
-    .section-title { font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; }
-    .refresh-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: 11px; padding: 5px 12px; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
-    .refresh-btn:active { background: var(--card-hover); }
-    .refresh-btn svg { width: 12px; height: 12px; }
-    .refresh-btn.spinning svg { animation: spin 0.8s linear infinite; }
-
-    /* Market filter */
-    .filter-row { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; }
-    .filter-row::-webkit-scrollbar { display: none; }
-    .filter-chip { background: var(--card); border: 1px solid var(--border); color: var(--text-dim); font-size: 11px; padding: 5px 12px; border-radius: 20px; white-space: nowrap; cursor: pointer; flex-shrink: 0; transition: all 0.2s; }
-    .filter-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .filter-chip:active { opacity: 0.7; }
-
-    /* Market card */
-    .market-list { display: flex; flex-direction: column; gap: 8px; }
-    .market-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; transition: all 0.2s; }
-    .market-card:active { transform: scale(0.99); background: var(--card-hover); }
-    .market-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-    .market-question { font-size: 13px; font-weight: 600; flex: 1; padding-right: 8px; line-height: 1.4; }
-    .market-tag { font-size: 9px; background: rgba(108,99,255,0.15); color: #a5a0ff; padding: 2px 7px; border-radius: 6px; margin-left: 6px; white-space: nowrap; flex-shrink: 0; }
-    .market-footer { display: flex; justify-content: space-between; align-items: center; }
-    .yes-no { display: flex; gap: 8px; }
-    .prob-box { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; }
-    .prob-box.yes { color: var(--green); }
-    .prob-box.no { color: var(--red); }
-    .prob-bar { flex: 1; height: 4px; background: var(--border); border-radius: 4px; overflow: hidden; display: flex; }
-    .prob-bar-yes { background: var(--green); height: 100%; }
-    .prob-bar-no { background: var(--red); height: 100%; }
-    .market-meta { font-size: 10px; color: var(--text-dim); text-align: right; }
-    .volume-chip { background: rgba(16,185,129,0.1); color: var(--green); padding: 2px 6px; border-radius: 6px; font-size: 10px; font-weight: 600; }
-
-    /* Category colors */
-    .cat-politics { background: rgba(239,68,68,0.15); color: #ef4444; }
-    .cat-geopolitics { background: rgba(139,92,246,0.15); color: #a855f7; }
-    .cat-world { background: rgba(59,130,246,0.15); color: #3b82f6; }
-    .cat-crypto { background: rgba(249,191,36,0.15); color: #fbbf24; }
-    .cat-finance { background: rgba(108,114,127,0.15); color: #9ca3af; }
-    .cat-ai { background: rgba(6,182,212,0.15); color: #06b6d4; }
-    .cat-sports { background: rgba(16,185,129,0.15); color: #10b981; }
-    .cat-economy { background: rgba(234,88,12,0.15); color: #ea580c; }
-
-    /* No data */
-    .no-data { text-align: center; padding: 30px; color: var(--text-dim); font-size: 13px; }
-
-    /* Footer */
-    footer { text-align: center; padding: 20px 0 10px; font-size: 11px; color: var(--text-dim); }
-    footer a { color: var(--accent2); text-decoration: none; }
+    .error-msg { background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:9px 12px; font-size:11px; color:var(--red); margin:7px 0; display:none; }
+    .pizza-hero { background:linear-gradient(135deg,#1a1040,#0d1f3c); border:1px solid rgba(108,99,255,0.3); border-radius:14px; padding:13px; margin:10px 0; position:relative; overflow:hidden; }
+    .pizza-hero::before { content:'🍕'; position:absolute; right:10px; top:50%; transform:translateY(-50%); font-size:46px; opacity:0.12; }
+    .pizza-title { font-size:12px; font-weight:800; margin-bottom:5px; display:flex; align-items:center; gap:7px; }
+    .defcon-badge { font-size:10px; background:rgba(108,99,255,0.2); color:#a5a0ff; padding:2px 7px; border-radius:8px; font-weight:600; }
+    .defcon-display { display:flex; align-items:center; gap:9px; margin:5px 0; }
+    .defcon-big { font-size:32px; font-weight:900; font-family:'Courier New',monospace; }
+    .defcon-info { font-size:10px; color:var(--text-dim); }
+    .defcon-info .name { font-size:11px; font-weight:700; color:var(--text); display:block; }
+    .defcon-bar { flex:1; height:5px; background:var(--border); border-radius:6px; overflow:hidden; }
+    .defcon-fill { height:100%; border-radius:6px; transition:width 0.5s; }
+    .pizza-stores { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; margin-top:6px; }
+    .store-item { background:rgba(255,255,255,0.04); border-radius:8px; padding:6px 4px; text-align:center; }
+    .store-name { font-size:9px; color:var(--text-dim); margin-bottom:2px; }
+    .store-val { font-size:14px; font-weight:800; }
+    .busy-up { color:var(--red); }
+    .busy-mid { color:orange; }
+    .busy-down { color:var(--green); }
+    .pizza-alert { background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:8px; padding:6px 10px; font-size:10px; color:var(--red); margin-top:5px; font-weight:600; display:none; }
+    .pizza-note { font-size:9px; color:var(--text-dim); margin-top:4px; }
+    .section-header { display:flex; justify-content:space-between; align-items:center; margin:14px 0 6px; }
+    .section-title { font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:1.5px; }
+    .refresh-btn { background:var(--card); border:1px solid var(--border); color:var(--text); font-size:10px; padding:4px 10px; border-radius:20px; cursor:pointer; display:flex; align-items:center; gap:4px; }
+    .refresh-btn:active { background:var(--card-hover); }
+    .refresh-btn svg { width:10px; height:10px; }
+    .refresh-btn.spinning svg { animation:spin 0.8s linear infinite; }
+    .comm-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:5px; }
+    .comm-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px 5px; text-align:center; cursor:pointer; transition:all 0.2s; }
+    .comm-card:active { transform:scale(0.95); }
+    .comm-card.sel { border-color:var(--accent); background:rgba(108,99,255,0.1); }
+    .comm-icon { font-size:16px; display:block; }
+    .comm-label { font-size:9px; color:var(--text-dim); display:block; }
+    .comm-price { font-size:11px; font-weight:800; display:block; margin-top:2px; }
+    .comm-chg { font-size:9px; font-weight:600; display:block; margin-top:1px; }
+    .chg-up { color:var(--green); }
+    .chg-down { color:var(--red); }
+    .chart-wrap { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:10px; margin-top:6px; }
+    .chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
+    .chart-sym { font-size:13px; font-weight:700; }
+    .chart-meta { font-size:9px; color:var(--text-dim); }
+    .chart-canvas-wrap { position:relative; height:150px; }
+    .chart-no-data { text-align:center; padding:22px; color:var(--text-dim); font-size:11px; }
+    canvas { width:100% !important; height:150px !important; }
+    .filter-row { display:flex; gap:5px; overflow-x:auto; padding:2px 0 6px; scrollbar-width:none; }
+    .filter-row::-webkit-scrollbar { display:none; }
+    .filter-chip { background:var(--card); border:1px solid var(--border); color:var(--text-dim); font-size:10px; padding:4px 10px; border-radius:20px; white-space:nowrap; cursor:pointer; flex-shrink:0; }
+    .filter-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .market-list { display:flex; flex-direction:column; gap:6px; }
+    .market-card { background:var(--card); border:1px solid var(--border); border-radius:11px; padding:10px; }
+    .market-card:active { transform:scale(0.99); background:var(--card-hover); }
+    .market-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px; }
+    .market-q { font-size:12px; font-weight:600; flex:1; padding-right:5px; line-height:1.4; }
+    .market-tag { font-size:8px; padding:2px 5px; border-radius:4px; flex-shrink:0; }
+    .tag-geo { background:rgba(139,92,246,0.15); color:#a855f7; }
+    .tag-pol { background:rgba(239,68,68,0.15); color:#ef4444; }
+    .tag-cry { background:rgba(249,191,36,0.15); color:#fbbf24; }
+    .tag-fin { background:rgba(108,114,127,0.15); color:#9ca3af; }
+    .tag-ai { background:rgba(6,182,212,0.15); color:#06b6d4; }
+    .tag-spo { background:rgba(16,185,129,0.15); color:#10b981; }
+    .tag-eco { background:rgba(234,88,12,0.15); color:#ea580c; }
+    .tag-wld { background:rgba(59,130,246,0.15); color:#3b82f6; }
+    .market-footer { display:flex; justify-content:space-between; align-items:center; }
+    .prob-row { display:flex; gap:7px; font-size:12px; font-weight:700; }
+    .prob-yes { color:var(--green); }
+    .prob-no { color:var(--red); }
+    .vol-chip { font-size:9px; background:rgba(16,185,129,0.1); color:var(--green); padding:2px 5px; border-radius:4px; font-weight:600; }
+    .prob-bar { flex:1; height:3px; background:var(--border); border-radius:4px; overflow:hidden; display:flex; margin-top:3px; }
+    .bar-yes { background:var(--green); height:100%; }
+    .bar-no { background:var(--red); height:100%; }
+    .no-data { text-align:center; padding:16px; color:var(--text-dim); font-size:11px; }
+    .loading { text-align:center; padding:16px; color:var(--text-dim); font-size:11px; }
+    footer { text-align:center; padding:12px 0 8px; font-size:10px; color:var(--text-dim); }
+    footer a { color:var(--accent2); text-decoration:none; }
   </style>
 </head>
 <body>
 <div class="container">
-
   <header>
-    <div>
-      <div class="logo">PolyScan <span class="badge">LIVE</span></div>
-    </div>
-    <div class="last-update">
-      <div>数据更新</div>
-      <div class="time" id="lastUpdate">--:--:--</div>
-    </div>
+    <div class="logo">PolyScan <span class="badge">LIVE</span></div>
+    <div class="last-update">更新 <span id="lu">--:--</span></div>
   </header>
-
-  <!-- Status -->
   <div class="status-bar">
-    <div class="status-chip">
-      <div class="dot green" id="polyStatus"></div>
-      <span>Polymarket</span>
-    </div>
-    <div class="status-chip">
-      <div class="dot green" id="pizzaStatus"></div>
-      <span>披萨指数</span>
-    </div>
-    <div class="status-chip">
-      <div class="dot yellow pulse"></div>
-      <span id="marketCount">--</span>
-    </div>
+    <div class="status-chip"><div class="dot green" id="dPoly"></div><span>Poly</span></div>
+    <div class="status-chip"><div class="dot green" id="dPizza"></div><span>披萨</span></div>
+    <div class="status-chip"><div class="dot green" id="dComm"></div><span>大宗</span></div>
   </div>
+  <div class="error-msg" id="errMsg"></div>
 
-  <!-- PIZZA INDEX SECTION -->
-  <div class="pizza-hero" id="pizzaSection">
-    <div class="pizza-title">
-      🍕 五角大楼披萨指数
-      <span id="pizzaDefconLevel">--</span>
-    </div>
+  <div class="pizza-hero">
+    <div class="pizza-title">🍕 五角大楼披萨指数 <span class="defcon-badge" id="pDefcon">--</span></div>
     <div class="defcon-display">
-      <div class="defcon-level" id="defconBig" style="color: var(--green)">?</div>
-      <div class="defcon-label">
-        <span class="level-name" id="defconName">加载中...</span>
+      <div class="defcon-big" id="defconNum" style="color:var(--green)">?</div>
+      <div class="defcon-info">
+        <span class="name" id="defconName">加载中</span>
         PizzaDEFCON
-        <div style="margin-top:4px">
-          <span id="pizzaActivity">--</span>
-        </div>
+        <div id="pizzaActivity" style="margin-top:2px;font-size:10px;color:var(--text-dim)">--</div>
       </div>
-      <div class="defcon-bar">
-        <div class="defcon-fill" id="defconBar" style="width:0%;background:var(--green)"></div>
-      </div>
+      <div class="defcon-bar"><div class="defcon-fill" id="defconBar" style="width:0%;background:var(--green)"></div></div>
     </div>
-    <div class="pizza-stores" id="pizzaStores">
-      <div class="store-item">
-        <div class="name">District Pizza</div>
-        <div class="busy-pct busy-low" id="store1">--</div>
-        <div class="sub">1.0英里</div>
-      </div>
-      <div class="store-item">
-        <div class="name">We The Pizza</div>
-        <div class="busy-pct busy-low" id="store2">--</div>
-        <div class="sub">1.0英里</div>
-      </div>
-      <div class="store-item">
-        <div class="name">Extreme Pizza</div>
-        <div class="busy-pct busy-low" id="store3">--</div>
-        <div class="sub">0.5英里</div>
-      </div>
+    <div class="pizza-stores">
+      <div class="store-item"><div class="store-name">District</div><div class="store-val busy-down" id="s1">--</div></div>
+      <div class="store-item"><div class="store-name">We The Pizza</div><div class="store-val busy-down" id="s2">--</div></div>
+      <div class="store-item"><div class="store-name">Extreme</div><div class="store-val busy-down" id="s3">--</div></div>
     </div>
-    <div class="pizza-alert" id="pizzaAlert" style="display:none">
-      ⚠️ <span id="pizzaAlertText">披萨指数异常攀升！</span>
-    </div>
-    <div class="pizza-note" id="pizzaNote">
-      数据来源：Pentagon Pizza Report (@PenPizzaReport) · 每5分钟自动刷新
-    </div>
+    <div class="pizza-alert" id="pizzaAlert"></div>
+    <div class="pizza-note">@PentagonPizzaReport · pizzint.watch · 每30分钟刷新</div>
   </div>
 
-  <!-- Commodities Section -->
   <div class="section-header">
-    <div class="section-title">📈 大宗商品 · 实时行情</div>
-    <span id="commTs" style="font-size:10px;color:var(--text-dim);"></span>
-  </div>
-  <div class="comm-grid" id="commGrid">
-    <div class="comm-card" id="comm-gold">
-      <span class="icon">🥇</span>
-      <span class="label">黄金</span>
-      <span class="price" id="gold-price">--</span>
-      <span class="change up" id="gold-change">--</span>
-    </div>
-    <div class="comm-card" id="comm-silver">
-      <span class="icon">🥈</span>
-      <span class="label">白银</span>
-      <span class="price" id="silver-price">--</span>
-      <span class="change up" id="silver-change">--</span>
-    </div>
-    <div class="comm-card" id="comm-oil">
-      <span class="icon">🛢️</span>
-      <span class="label">WTI原油</span>
-      <span class="price" id="oil-price">--</span>
-      <span class="change up" id="oil-change">--</span>
-    </div>
-    <div class="comm-card comm-treasury" id="comm-treasury">
-      <span class="icon">📊</span>
-      <span class="label">美10年期</span>
-      <span class="price" id="treasury-price">--</span>
-      <span class="change up" id="treasury-change">--</span>
-    </div>
-  </div>
-
-  <!-- Polymarket Section -->
-  <div class="section-header">
-    <div class="section-title">📊 Polymarket 热门市场</div>
-    <button class="refresh-btn" id="refreshBtn" onclick="refreshData()">
+    <div class="section-title">📈 大宗商品</div>
+    <button class="refresh-btn" id="refreshBtn" onclick="doRefresh()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
       刷新
     </button>
   </div>
-
-  <div class="filter-row" id="filterRow">
-    <div class="filter-chip active" onclick="setFilter('hot')">🔥 热门</div>
-    <div class="filter-chip" onclick="setFilter('geopolitics')">⚔️ 地缘政治</div>
-    <div class="filter-chip" onclick="setFilter('politics')">🗳️ 政治</div>
-    <div class="filter-chip" onclick="setFilter('crypto')">₿ 加密</div>
-    <div class="filter-chip" onclick="setFilter('finance')">📈 金融</div>
-    <div class="filter-chip" onclick="setFilter('ai')">🤖 AI</div>
-    <div class="filter-chip" onclick="setFilter('economy')">📊 经济</div>
-    <div class="filter-chip" onclick="setFilter('sports')">⚽ 体育</div>
+  <div class="comm-grid">
+    <div class="comm-card sel" id="cc-gold" onclick="selComm('gold')"><span class="comm-icon">🥇</span><span class="comm-label">黄金</span><span class="comm-price" id="gold-p">--</span><span class="comm-chg chg-up" id="gold-c">--</span></div>
+    <div class="comm-card" id="cc-silver" onclick="selComm('silver')"><span class="comm-icon">🥈</span><span class="comm-label">白银</span><span class="comm-price" id="silver-p">--</span><span class="comm-chg chg-up" id="silver-c">--</span></div>
+    <div class="comm-card" id="cc-oil" onclick="selComm('oil')"><span class="comm-icon">🛢️</span><span class="comm-label">WTI原油</span><span class="comm-price" id="oil-p">--</span><span class="comm-chg chg-up" id="oil-c">--</span></div>
+    <div class="comm-card" id="cc-treasury" onclick="selComm('treasury')"><span class="comm-icon">📊</span><span class="comm-label">美10年</span><span class="comm-price" id="treasury-p">--</span><span class="comm-chg chg-up" id="treasury-c">--</span></div>
   </div>
 
-  <div id="loadingIndicator" class="loading" style="display:none">
-    <div class="loading-spinner"></div>
-    加载中...
-  </div>
-  <div id="errorDisplay" class="error-msg" style="display:none"></div>
-
-  <div class="market-list" id="marketList">
-    <div class="loading">
-      <div class="loading-spinner"></div>
-      正在加载 Polymarket 数据...
+  <div class="chart-wrap">
+    <div class="chart-header">
+      <div><div class="chart-sym" id="chartTitle">🥇 黄金</div><div class="chart-meta" id="chartMeta">--</div></div>
+      <div class="chart-meta" id="chartTime">--</div>
+    </div>
+    <div class="chart-canvas-wrap">
+      <div class="chart-no-data" id="chartNoData">正在加载图表...</div>
+      <canvas id="commChart" style="display:none"></canvas>
     </div>
   </div>
 
-  <footer>
-    数据来源：Polymarket Gamma API · 披萨指数基于开源情报<br>
-    不构成投资建议 · <a href="https://polymarket.com" target="_blank">前往 Polymarket →</a>
-  </footer>
+  <div class="section-header">
+    <div class="section-title">📊 Polymarket 热门</div>
+  </div>
+  <div class="filter-row">
+    <div class="filter-chip active" id="f-hot" onclick="setFilter('hot')">🔥</div>
+    <div class="filter-chip" id="f-geo" onclick="setFilter('geopolitics')">⚔️</div>
+    <div class="filter-chip" id="f-pol" onclick="setFilter('politics')">🗳️</div>
+    <div class="filter-chip" id="f-cry" onclick="setFilter('crypto')">₿</div>
+    <div class="filter-chip" id="f-fin" onclick="setFilter('finance')">📈</div>
+    <div class="filter-chip" id="f-ai" onclick="setFilter('ai')">🤖</div>
+  </div>
+  <div class="market-list" id="marketList"><div class="loading"><div class="spinner"></div>加载中...</div></div>
+
+  <footer>PolyScan · Polymarket / Yahoo Finance / US Treasury<br><a href="https://polymarket.com" target="_blank">polymarket.com</a></footer>
 </div>
 
 <script>
-const POLYMARKET_API = 'https://gamma-api.polymarket.com';
+const REFRESH_MS = 30 * 60 * 1000;
+const $ = id => document.getElementById(id);
+const fmtH = d => d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
 let allMarkets = [];
-let currentFilter = 'all';
-let pizzaDataCache = null;
-let fetchAttempts = 0;
-const MAX_ATTEMPTS = 3;
+let currentFilter = 'hot';
+let selectedComm = 'gold';
+let commChart = null;
+const PROXIES = [
+  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+];
+const COMM_NAMES = {gold:'🥇 黄金',silver:'🥈 白银',oil:'🛢️ WTI原油',treasury:'📊 美10年国债'};
+const COMM_COLORS = {gold:{line:'#fbbf24',fill:'rgba(251,191,36,0.1)'},silver:{line:'#9ca3af',fill:'rgba(156,163,175,0.1)'},oil:{line:'#f97316',fill:'rgba(249,115,22,0.1)'},treasury:{line:'#a855f7',fill:'rgba(168,85,247,0.1)'}};
+const setDot = (id,c) => { const e=$(id); if(e) e.className='dot '+c; };
 
-function tryFetch(url, proxies) {
-  if (!proxies || proxies.length === 0) return Promise.reject('No proxies available');
-  const proxy = proxies[0];
-  return fetch(proxy(url), { signal: AbortSignal.timeout(15000) }).then(r => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  }).catch(e => {
-    console.warn('Proxy failed:', proxies[0].name || 'anonymous', e.message);
-    if (proxies.length > 1) {
-      return tryFetch(url, proxies.slice(1));
-    }
-    throw e;
-  });
+function lget(k){try{return JSON.parse(localStorage.getItem('pcs_'+k));}catch(e){return null;}}
+function lset(k,v){try{localStorage.setItem('pcs_'+k,JSON.stringify(v));}catch(e){}}
+
+function pushHist(k,v){
+  const h=lget('h_'+k)||[];
+  const now=Date.now();
+  if(h.length>0&&now-h[h.length-1].t<5*60*1000)return;
+  h.push({t:now,v});
+  if(h.length>96)h.shift();
+  lset('h_'+k,h);
 }
+function getHist(k){return lget('h_'+k)||[];}
+function fmtP(k,v){return k==='treasury'?v.toFixed(3)+'%':'$'+v.toFixed(2);}
 
-function polymarketProxy(url) {
-  // Try multiple CORS proxies in order
-  const proxies = [
-    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  ];
-  return proxies[0](url);
-}
+function updateTime(){$('lu').textContent=fmtH(new Date());}
+setInterval(updateTime,30000);updateTime();
 
-function timeAgo(date) {
-  const now = new Date();
-  const diff = Math.floor((now - date) / 1000);
-  if (diff < 60) return diff + '秒前';
-  if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
-  return Math.floor(diff / 3600) + '小时前';
-}
-
-function updateTime() {
-  const now = new Date();
-  document.getElementById('lastUpdate').textContent =
-    now.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-}
-setInterval(updateTime, 1000);
-updateTime();
-
-function setStatus(id, status) {
-  const el = document.getElementById(id);
-  el.className = 'dot ' + status;
-}
-
-function setDefconColor(level) {
-  const colors = {5:'#10b981',4:'#10b981',3:'orange',2:'#ef4444',1:'#ef4444'};
-  const bg = {5:'rgba(16,185,129,0.15)',4:'rgba(16,185,129,0.1)',3:'rgba(255,165,0,0.15)',2:'rgba(239,68,68,0.15)',1:'rgba(239,68,68,0.2)'};
-  return { color: colors[level] || '#9ca3af', bg: bg[level] || 'rgba(156,163,175,0.1)' };
-}
-
-function updatePizzaUI(data) {
-  const defcon = data.defcon || 5;
-  const { color, bg } = setDefconColor(defcon);
-
-  document.getElementById('pizzaDefconLevel').textContent = 'DEFCON ' + defcon;
-  document.getElementById('defconBig').textContent = defcon;
-  document.getElementById('defconBig').style.color = color;
-  document.getElementById('defconName').textContent = data.defconName || '和平时期';
-  document.getElementById('pizzaActivity').textContent = data.activity || '--';
-
-  const pct = Math.min(((5 - defcon + 1) / 5) * 100, 100);
-  const bar = document.getElementById('defconBar');
-  bar.style.width = pct + '%';
-  bar.style.background = color;
-
-  // Stores
-  const stores = data.stores || {};
-  const ids = ['store1', 'store2', 'store3'];
-  const keys = ['district', 'wethepizza', 'extreme'];
-  keys.forEach((k, i) => {
-    const val = stores[k] || '--';
-    const el = document.getElementById(ids[i]);
-    el.textContent = val;
-    el.className = 'busy-pct ' + (val !== '--' ? (parseInt(val) > 180 ? 'busy-high' : parseInt(val) > 120 ? 'busy-mid' : 'busy-low') : 'busy-low');
-  });
-
-  // Alert
-  const alertEl = document.getElementById('pizzaAlert');
-  if (defcon <= 2 || (data.alert && data.alert !== 'none')) {
-    alertEl.style.display = 'block';
-    document.getElementById('pizzaAlertText').textContent = data.alert || '⚠️ 披萨指数异常！建议关注！';
-  } else if (defcon <= 3) {
-    alertEl.style.display = 'block';
-    document.getElementById('pizzaAlertText').textContent = data.activity || '⚡ 披萨指数上升，注意观察';
-    alertEl.style.background = 'rgba(255,165,0,0.1)';
-    alertEl.style.borderColor = 'rgba(255,165,0,0.3)';
-    alertEl.style.color = 'orange';
-  } else {
-    alertEl.style.display = 'none';
+function updateCommUI(){
+  const data=lget('data')||{};
+  const ts=parseInt(localStorage.getItem('pcs_ts')||'0');
+  for(const k of['gold','silver','oil','treasury']){
+    const d=data[k];if(!d)continue;
+    const pe=$(k+'-p');const ce=$(k+'-c');
+    if(pe)pe.textContent=fmtP(k,d.price);
+    if(ce){const up=d.change>=0;ce.textContent=(up?'+':'')+d.change.toFixed(2)+'%';ce.className='comm-chg '+(up?'chg-up':'chg-down');}
   }
-
-  setStatus('pizzaStatus', defcon <= 2 ? 'red' : defcon <= 3 ? 'orange' : 'green');
+  if(ts>0)$('chartTime').textContent='更新 '+fmtH(new Date(ts));
 }
 
-async function fetchPizzaIndex() {
-  try {
-    // Try multiple sources for pizza data
-    let fetched = false;
+async function fetchAllComm(){
+  setDot('dComm','orange');
+  try{await Promise.allSettled([fetchYahoo(),fetchTreasury()]);setDot('dComm','green');}catch(e){setDot('dComm','orange');}
+  updateCommUI();updateChart(selectedComm);
+}
 
-    // Try @PentagonPizzaReport via various proxies
-    const sources = [
-      { url: 'https://pizzint.watch/', proxy: u => `https://corsproxy.io/?${encodeURIComponent(u)}` },
-      { url: 'https://pizzint.watch/', proxy: u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
-    ];
+async function fetchYahoo(){
+  const syms=[{s:'GC=F',k:'gold'},{s:'SI=F',k:'silver'},{s:'CL=F',k:'oil'}];
+  for(const {s,k} of syms){
+    for(const pf of PROXIES){
+      try{
+        const r=await fetch(pf(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}?interval=1d&range=5d`),{signal:AbortSignal.timeout(12000)});
+        if(!r.ok)throw new Error();
+        const j=await r.json();const res=j?.chart?.result?.[0];
+        if(!res)throw new Error();
+        const ts=res.timestamp||[];const qs=res.Indicators?.quote?.[0]?.close||[];
+        const hist=[];for(let i=0;i<ts.length;i++)if(qs[i]!=null)hist.push({t:ts[i]*1000,v:qs[i]});
+        if(hist.length>0)lset('h_'+k,hist);
+        const meta=res.meta||{};const price=meta.regularMarketPrice;
+        const prev=meta.chartPreviousClose||meta.previousClose;
+        if(!price)throw new Error();
+        const change=prev?(price-prev)/prev*100:0;
+        const data=lget('data')||{};data[k]={price,change};lset('data',data);
+        pushHist(k,price);break;
+      }catch(e){}
+    }
+  }
+  localStorage.setItem('pcs_ts',Date.now().toString());
+}
 
-    for (const src of sources) {
-      try {
-        const r = await fetch(src.proxy(src.url), { signal: AbortSignal.timeout(8000) });
-        if (r.ok) {
-          const text = await r.text();
-          const defconMatch = text.match(/DEFCON[:\s]*(\d)/i) || text.match(/defcon["\s:]+(\d)/i);
-          const defcon = defconMatch ? parseInt(defconMatch[1]) : null;
-          if (defcon && defcon >= 1 && defcon <= 5) {
-            fetched = true;
-            const defconNames = {5:'和平时期',4:'正常活跃',3:'中度活跃',2:'高度活跃',1:'战争临界'};
-            const stores = {};
-            const dm = text.match(/District[^0-9]*?(\d{2,3})%/i);
-            const wm = text.match(/We[\s_]+The[\s_]+Pizza[^0-9]*?(\d{2,3})%/i);
-            const em = text.match(/Extreme[^0-9]*?(\d{2,3})%/i);
-            stores.district = dm ? dm[1] : null;
-            stores.wethepizza = wm ? wm[1] : null;
-            stores.extreme = em ? em[1] : null;
-            pizzaDataCache = {
-              defcon,
-              defconName: defconNames[defcon],
-              activity: `周边披萨店活跃度${defcon <= 2 ? '极高' : defcon <= 3 ? '偏高' : '正常'}`,
-              stores
-            };
-            updatePizzaUI(pizzaDataCache);
-            setStatus('pizzaStatus', defcon <= 2 ? 'red' : defcon <= 3 ? 'orange' : 'green');
-            return;
-          }
-        }
-      } catch(e) { /* try next source */ }
-    }
-
-    // Fallback data
-    if (!pizzaDataCache) {
-      pizzaDataCache = {
-        defcon: 4,
-        defconName: '正常活跃',
-        activity: '披萨指数数据暂时无法获取，请手动查看 @PentagonPizzaReport 或 pizzint.watch',
-        stores: { district: '--', wethepizza: '--', extreme: '--' }
-      };
-    }
-    updatePizzaUI(pizzaDataCache);
-    setStatus('pizzaStatus', 'orange');
-  } catch(e) {
-    console.warn('Pizza fetch error:', e);
-    if (!pizzaDataCache) {
-      pizzaDataCache = {
-        defcon: 4, defconName: '正常活跃',
-        activity: '数据获取失败，请手动查看 pizzint.watch',
-        stores: { district: '--', wethepizza: '--', extreme: '--' }
-      };
-      updatePizzaUI(pizzaDataCache);
-    }
-    setStatus('pizzaStatus', 'orange');
+async function fetchTreasury(){
+  for(const pf of PROXIES){
+    try{
+      const r=await fetch(pf('https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&download=true'),{signal:AbortSignal.timeout(15000)});
+      if(!r.ok)throw new Error();
+      const t=await r.text();const lns=t.trim().split('\n');
+      if(lns.length<2)throw new Error();
+      const hdr=lns[0].split(',').map(h=>h.replace(/"/g,'').trim());
+      const ti=hdr.findIndex(h=>h==='10 Yr');if(ti<0)throw new Error();
+      const row=n=>lns[n].split(',').map(v=>parseFloat(v.replace(/"/g,'').trim()));
+      const tenYr=row(lns.length-1)[ti];
+      const prevYr=lns.length>=3?row(lns.length-2)[ti]:null;
+      if(!tenYr||isNaN(tenYr))throw new Error();
+      const chg=(prevYr&&!isNaN(prevYr))?tenYr-prevYr:0;
+      const data=lget('data')||{};data.treasury={price:tenYr,change:chg};lset('data',data);
+      pushHist('treasury',tenYr);break;
+    }catch(e){}
   }
 }
 
-function getCatColor(tags) {
-  if (!tags) return '';
-  const slugs = (tags || []).map(t => (typeof t === 'object' ? (t.slug || '') : (t || ''))).join(' ');
-  const s = slugs.toLowerCase();
-  if (s.includes('politics')) return 'cat-politics';
-  if (s.includes('geopolitics')) return 'cat-geopolitics';
-  if (s.includes('world') && !s.includes('crypto')) return 'cat-world';
-  if (s.includes('crypto')) return 'cat-crypto';
-  if (s.includes('finance') || s.includes('stock')) return 'cat-finance';
-  if (s.includes('ai') || s.includes('tech')) return 'cat-ai';
-  if (s.includes('sport')) return 'cat-sports';
-  if (s.includes('econom')) return 'cat-economy';
-  return '';
+function selComm(k){
+  selectedComm=k;
+  document.querySelectorAll('.comm-card').forEach(c=>c.classList.remove('sel'));
+  $('cc-'+k).classList.add('sel');
+  $('chartTitle').textContent=COMM_NAMES[k];
+  updateChart(k);
 }
 
-function getCatName(tags) {
-  if (!tags) return '';
-  const slugs = (tags || []).map(t => (typeof t === 'object' ? (t.slug || '') : (t || ''))).join(' ');
-  const s = slugs.toLowerCase();
-  if (s.includes('politics')) return '政治';
-  if (s.includes('geopolitics')) return '地缘';
-  if (s.includes('world')) return '国际';
-  if (s.includes('crypto')) return '加密';
-  if (s.includes('finance')) return '金融';
-  if (s.includes('ai') || s.includes('tech')) return 'AI';
-  if (s.includes('sport')) return '体育';
-  if (s.includes('econom')) return '经济';
-  return '';
-}
-
-function formatVolume(v) {
-  v = parseFloat(v) || 0;
-  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
-  if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
-  return '$' + v.toFixed(0);
-}
-
-function renderMarkets(markets) {
-  const list = document.getElementById('marketList');
-  if (!markets || markets.length === 0) {
-    list.innerHTML = '<div class="no-data">该分类暂无数据</div>';
+function updateChart(key){
+  const hist=getHist(key);
+  const noData=$('chartNoData');const canvas=$('commChart');
+  if(hist.length===0){
+    if(noData){noData.style.display='block';noData.textContent='暂无历史数据，刷新后将逐步积累';}
+    if(canvas)canvas.style.display='none';
+    if(commChart){commChart.destroy();commChart=null;}
     return;
   }
-  list.innerHTML = markets.map(m => {
-    const prices = m.outcomePrices ? JSON.parse(m.outcomePrices) : ['0.5', '0.5'];
-    const yes = parseFloat(prices[0]) || 0.5;
-    const no = 1 - yes;
-    const vol = formatVolume(m.volume24hr || m.volume || 0);
-    const cat = getCatName(m.tags);
-    const catColor = getCatColor(m.tags);
-    const q = m.question || m.title || '';
-    const slug = m.slug || '';
-    const link = slug ? `https://polymarket.com/event/${slug}` : '#';
-
-    return `<a href="${link}" target="_blank" style="text-decoration:none;color:inherit">
-      <div class="market-card">
-        <div class="market-header">
-          <div class="market-question">${q}</div>
-          ${cat ? `<span class="market-tag ${catColor}">${cat}</span>` : ''}
-        </div>
-        <div class="market-footer">
-          <div class="yes-no">
-            <div class="prob-box yes">
-              YES <span>${(yes*100).toFixed(1)}%</span>
-            </div>
-            <div class="prob-box no">
-              NO <span>${(no*100).toFixed(1)}%</span>
-            </div>
-          </div>
-          <div class="market-meta">
-            <span class="volume-chip">${vol}</span>
-          </div>
-        </div>
-        <div class="prob-bar" style="margin-top:6px">
-          <div class="prob-bar-yes" style="width:${(yes*100).toFixed(1)}%"></div>
-        </div>
-      </div>
-    </a>`;
-  }).join('');
+  if(noData)noData.style.display='none';
+  if(canvas)canvas.style.display='block';
+  const labels=hist.map(p=>fmtH(new Date(p.t)));
+  const vals=hist.map(p=>p.v);
+  const c=COMM_COLORS[key]||COMM_COLORS.gold;
+  if(commChart)commChart.destroy();
+  commChart=new Chart(canvas.getContext('2d'),{
+    type:'line',
+    data:{labels,datasets:[{data:vals,borderColor:c.line,backgroundColor:c.fill,borderWidth:2,fill:true,tension:0.3,pointRadius:2,pointHoverRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>key==='treasury'?ctx.parsed.y.toFixed(3)+'%':'$'+ctx.parsed.y.toFixed(2)}}}},
+      scales:{x:{ticks:{color:'#9ca3af',font:{size:9},maxTicksLimit:6,maxRotation:0},grid:{color:'rgba(255,255,255,0.04)'}},
+             y:{ticks:{color:'#9ca3af',font:{size:9},callback:v=>key==='treasury'?v.toFixed(2)+'%':'$'+v.toFixed(0)},grid:{color:'rgba(255,255,255,0.04)'}}}}
+  });
+  const last=hist[hist.length-1],first=hist[0];
+  const pct=first?((last.v-first.v)/first.v*100):0;
+  $('chartMeta').textContent=(pct>=0?'+':'')+pct.toFixed(2)+'% · '+hist.length+'点';
 }
 
-function setFilter(tag) {
-  currentFilter = tag;
-  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-  event.target.classList.add('active');
+async function fetchPizza(){
+  setDot('dPizza','orange');
+  try{
+    for(const src of[{u:'https://pizzint.watch/',p:u=>`https://corsproxy.io/?${encodeURIComponent(u)}`}]){
+      try{
+        const r=await fetch(src.p(src.u),{signal:AbortSignal.timeout(10000)});
+        if(!r.ok)throw new Error();
+        const t=await r.text();
+        const m=t.match(/DEFCON[:\s]*(\d)/i)||t.match(/defcon["\s:]+(\d)/i);
+        const defcon=m?parseInt(m[1]):null;
+        if(defcon&&defcon>=1&&defcon<=5){
+          const names={5:'和平时期',4:'正常活跃',3:'中度活跃',2:'高度活跃',1:'战争临界'};
+          const colors={5:'#10b981',4:'#10b981',3:'orange',2:'#ef4444',1:'#ef4444'};
+          $('pDefcon').textContent='DEFCON '+defcon;
+          $('defconNum').textContent=defcon;
+          $('defconNum').style.color=colors[defcon];
+          $('defconName').textContent=names[defcon];
+          $('defconBar').style.width=((6-defcon)/5*100)+'%';
+          $('defconBar').style.background=colors[defcon];
+          $('pizzaActivity').textContent=defcon<=2?'⚠️ 高度活跃':defcon<=3?'略有上升':'正常';
+          const al=$('pizzaAlert');
+          if(defcon<=2){al.style.display='block';al.textContent='⚠️ 披萨指数异常攀升！';al.style.color='var(--red)';al.style.background='rgba(239,68,68,0.1)';al.style.borderColor='rgba(239,68,68,0.3)';}
+          else if(defcon<=3){al.style.display='block';al.textContent='⚡ 活动偏高，注意观察';al.style.color='orange';al.style.background='rgba(255,165,0,0.1)';al.style.borderColor='rgba(255,165,0,0.3)';}
+          else al.style.display='none';
+          setDot('dPizza',defcon<=2?'red':defcon<=3?'orange':'green');
+          return;
+        }
+      }catch(e){}
+    }
+    setDot('dPizza','orange');$('defconName').textContent='数据获取失败';$('pizzaActivity').textContent='请手动查看 pizzint.watch';
+  }catch(e){setDot('dPizza','orange');$('defconName').textContent='加载失败';}
+}
+
+async function fetchPoly(){
+  setDot('dPoly','orange');
+  $('errMsg').style.display='none';
+  try{
+    const url='https://gamma-api.polymarket.com/events?closed=false&limit=50&order=volume24hr&ascending=false';
+    let events=null;
+    for(const pf of PROXIES){
+      try{const r=await fetch(pf(url),{signal:AbortSignal.timeout(15000)});if(!r.ok)throw new Error('HTTP '+r.status);events=await r.json();break;}catch(e){}
+    }
+    if(!events)throw new Error('All proxies failed');
+    const markets=[];
+    for(const ev of events){
+      if(ev.closed)continue;
+      for(const m of(ev.markets||[])){
+        if(m.closed)continue;
+        m._title=ev.title;m._tags=ev.tags||[];m._slug=ev.slug||m.slug||'';markets.push(m);
+      }
+    }
+    markets.sort((a,b)=>parseFloat(b.volume24hr||0)-parseFloat(a.volume24hr||0));
+    allMarkets=markets;setDot('dPoly','green');filterMarkets();
+  }catch(e){console.warn('Poly error:',e);setDot('dPoly','red');$('marketList').innerHTML='<div class="no-data">Poly数据加载失败，请检查网络</div>';}
+}
+
+function tagColor(tags){
+  const s=(tags||[]).map(t=>(typeof t==='object'?(t.slug||''):(t||''))).join(' ').toLowerCase();
+  if(s.includes('geopolitics'))return{tcls:'tag-geo',name:'地缘'};
+  if(s.includes('politics'))return{tcls:'tag-pol',name:'政治'};
+  if(s.includes('crypto'))return{tcls:'tag-cry',name:'加密'};
+  if(s.includes('finance')||s.includes('stock'))return{tcls:'tag-fin',name:'金融'};
+  if(s.includes('ai')||s.includes('tech'))return{tcls:'tag-ai',name:'AI'};
+  if(s.includes('sport'))return{tcls:'tag-spo',name:'体育'};
+  if(s.includes('econom'))return{tcls:'tag-eco',name:'经济'};
+  if(s.includes('world'))return{tcls:'tag-wld',name:'国际'};
+  return{tcls:'',name:''};
+}
+
+function filterMarkets(){
+  let mks=allMarkets;
+  if(currentFilter!=='hot'){
+    mks=allMarkets.filter(m=>{
+      const s=(m._tags||[]).map(t=>(typeof t==='object'?(t.slug||''):(t||''))).join(' ').toLowerCase();
+      return s.includes(currentFilter);
+    });
+  }
+  renderMarkets(mks.slice(0,30));
+}
+
+function setFilter(f){
+  currentFilter=f;
+  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+  $('f-'+f).classList.add('active');
   filterMarkets();
 }
 
-function filterMarkets() {
-  let filtered = allMarkets;
-  if (currentFilter === 'hot') filtered = allMarkets.slice(0, 30);
-  else if (currentFilter !== 'all') {
-    filtered = allMarkets.filter(m => {
-      const tags = (m.tags || []).map(t => (typeof t === 'object' ? (t.slug || '') : (t || ''))).join(' ').toLowerCase();
-      return tags.includes(currentFilter);
-    });
-  }
-  renderMarkets(filtered.slice(0, 30));
+function renderMarkets(mks){
+  const el=$('marketList');
+  if(!mks||mks.length===0){el.innerHTML='<div class="no-data">该分类暂无数据</div>';return;}
+  el.innerHTML=mks.map(m=>{
+    const prices=m.outcomePrices?JSON.parse(m.outcomePrices):['0.5','0.5'];
+    const yes=parseFloat(prices[0])||0.5;
+    const no=1-yes;
+    const vol=(parseFloat(m.volume24hr)||0);
+    const volStr=vol>=1e6?'$'+(vol/1e6).toFixed(1)+'M':vol>=1e3?'$'+(vol/1e3).toFixed(0)+'K':'$'+vol.toFixed(0);
+    const tc=tagColor(m._tags);
+    const link=m._slug?'https://polymarket.com/event/'+m._slug:'#';
+    const q=(m.question||m._title||'');
+    return`<a href="${link}" target="_blank" style="text-decoration:none;color:inherit"><div class="market-card"><div class="market-header"><div class="market-q">${q}</div>${tc.name?`<span class="market-tag ${tc.tcls}">${tc.name}</span>`:''}</div><div class="market-footer"><div class="prob-row"><span class="prob-yes">YES ${(yes*100).toFixed(1)}%</span><span class="prob-no">NO ${(no*100).toFixed(1)}%</span></div><span class="vol-chip">${volStr}</span></div><div class="prob-bar"><div class="bar-yes" style="width:${(yes*100).toFixed(1)}%"></div></div></div></a>`;
+  }).join('');
 }
 
-async function fetchPolymarket() {
-  setStatus('polyStatus', 'orange');
-  const errEl = document.getElementById('errorDisplay');
-  errEl.style.display = 'none';
-  try {
-    const url = `${POLYMARKET_API}/events?closed=false&limit=50&order=volume24hr&ascending=false`;
-    const events = await tryFetch(url, [
-      u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-      u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-      u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-    ]);
-
-    let markets = [];
-    for (const ev of events) {
-      for (const m of (ev.markets || [])) {
-        // Skip closed/resolved markets
-        if (m.closed || m.resolvedBy) continue;
-        m.title = ev.title;
-        m.tags = ev.tags || [];
-        m.slug = ev.slug || m.slug || '';
-        m.eventClosed = ev.closed || false;
-        markets.push(m);
-      }
-    }
-
-    markets.sort((a, b) => parseFloat(b.volume24hr || 0) - parseFloat(a.volume24hr || 0));
-    allMarkets = markets;
-
-    const count = document.getElementById('marketCount');
-    count.textContent = markets.length + ' 市场';
-
-    setStatus('polyStatus', 'green');
-    filterMarkets();
-  } catch(e) {
-    console.warn('Polymarket fetch error:', e);
-    setStatus('polyStatus', 'red');
-    document.getElementById('errorDisplay').style.display = 'block';
-    document.getElementById('errorDisplay').textContent = '⚠️ Polymarket 数据暂时无法获取（网络/CORS 限制），请稍后点击右上角「刷新」按钮重试。';
-    document.getElementById('marketList').innerHTML = '<div class="no-data">数据加载失败，请点击右上角刷新按钮重试</div>';
-  }
-}
-
-async function refreshData() {
-  const btn = document.getElementById('refreshBtn');
-  btn.classList.add('spinning');
-  await Promise.all([fetchPolymarket(), fetchPizzaIndex(), fetchCommodities()]);
+async function doRefresh(){
+  const btn=$('refreshBtn');btn.classList.add('spinning');
+  await Promise.allSettled([fetchPoly(),fetchPizza(),fetchAllComm()]);
   btn.classList.remove('spinning');
 }
 
-async function init() {
-  await Promise.all([fetchPolymarket(), fetchPizzaIndex(), fetchCommodities()]);
-  // Auto-refresh every 5 minutes
-  setInterval(() => { fetchPizzaIndex(); }, 5 * 60 * 1000);
-  setInterval(() => { fetchCommodities(); }, 10 * 60 * 1000);
+async function init(){
+  updateCommUI();updateChart(selectedComm);
+  await Promise.all([fetchPoly(),fetchPizza(),fetchAllComm()]);
+  setInterval(()=>{fetchPizza();},REFRESH_MS);
+  setInterval(()=>{fetchAllComm();},REFRESH_MS);
 }
 init();
-
-// ============ COMMODITIES ============
-const COMM_CACHE_KEY = 'polyscan_commodities';
-const COMM_TS_KEY = 'polyscan_comm_ts';
-
-function getCachedComm() {
-  try {
-    const raw = localStorage.getItem(COMM_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch(e) { return null; }
-}
-
-function setCachedComm(data) {
-  try {
-    localStorage.setItem(COMM_CACHE_KEY, JSON.stringify(data));
-    localStorage.setItem(COMM_TS_KEY, Date.now().toString());
-  } catch(e) {}
-}
-
-function updateCommDisplay(data) {
-  if (!data) return;
-  const fmt = (id, price, change) => {
-    const pEl = document.getElementById(id + '-price');
-    const cEl = document.getElementById(id + '-change');
-    if (pEl) pEl.textContent = price;
-    if (cEl) {
-      cEl.textContent = change;
-      const isUp = change.startsWith('+');
-      cEl.className = 'change ' + (isUp ? 'up' : 'down');
-    }
-  };
-  fmt('gold', data.gold.price, data.gold.change);
-  fmt('silver', data.silver.price, data.silver.change);
-  fmt('oil', data.oil.price, data.oil.change);
-  fmt('treasury', data.treasury.price, data.treasury.change);
-  const ts = document.getElementById('commTs');
-  if (ts && data.timestamp) {
-    const d = new Date(data.timestamp);
-    ts.textContent = '更新: ' + d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
-  }
-}
-
-async function fetchCommodities() {
-  // 1. Load cached data immediately
-  const cached = getCachedComm();
-  updateCommDisplay(cached);
-
-  // 2. Fetch fresh data in background
-  await Promise.allSettled([fetchYahooComm(), fetchTreasuryYield()]);
-}
-
-async function fetchYahooComm() {
-  const proxies = [
-    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  ];
-
-  const symbols = { 'GC=F': 'gold', 'SI=F': 'silver', 'CL=F': 'oil' };
-  const data = cached || {};
-
-  for (const [sym, key] of Object.entries(symbols)) {
-    for (const proxyFn of proxies) {
-      try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=2d`;
-        const r = await fetch(proxyFn(url), { signal: AbortSignal.timeout(12000) });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const json = await r.json();
-        const result = json?.chart?.result?.[0];
-        if (!result) throw new Error('No result');
-        const meta = result.meta || {};
-        const price = meta.regularMarketPrice;
-        const prev = meta.chartPreviousClose || meta.previousClose;
-        if (!price) throw new Error('No price');
-        const change = prev ? ((price - prev) / prev * 100) : 0;
-        data[key] = {
-          price: '$' + price.toFixed(2),
-          change: (change >= 0 ? '+' : '') + change.toFixed(2) + '%'
-        };
-        break; // success, move to next symbol
-      } catch(e) {
-        console.warn('Yahoo', sym, 'via proxy failed:', e.message);
-      }
-    }
-  }
-
-  data.timestamp = Date.now();
-  setCachedComm(data);
-  updateCommDisplay(data);
-}
-
-async function fetchTreasuryYield() {
-  for (const proxyFn of [
-    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  ]) {
-    try {
-      const url = 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&download=true';
-      const r = await fetch(proxyFn(url), { signal: AbortSignal.timeout(15000) });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const text = await r.text();
-      const lines = text.trim().split('\n');
-      if (lines.length < 2) throw new Error('No data lines');
-      const hdrs = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-      const ti = hdrs.findIndex(h => h === '10 Yr');
-      if (ti < 0) throw new Error('No 10Yr column');
-      const cur = lines[lines.length - 1].split(',').map(v => v.replace(/"/g, '').trim());
-      const prev = lines.length >= 3 ? lines[lines.length - 2].split(',').map(v => v.replace(/"/g, '').trim()) : null;
-      const tenYr = parseFloat(cur[ti]);
-      const prevYr = prev ? parseFloat(prev[ti]) : null;
-      if (!tenYr || isNaN(tenYr)) throw new Error('Invalid tenYr');
-      const chg = (prevYr && !isNaN(prevYr)) ? (tenYr - prevYr) : 0;
-      const cached = getCachedComm() || {};
-      cached.treasury = {
-        price: tenYr.toFixed(2) + '%',
-        change: (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%'
-      };
-      cached.timestamp = Date.now();
-      setCachedComm(cached);
-      updateCommDisplay(cached);
-      return; // success
-    } catch(e) {
-      console.warn('Treasury via proxy failed:', e.message);
-    }
-  }
-}
 </script>
 </body>
 </html>
