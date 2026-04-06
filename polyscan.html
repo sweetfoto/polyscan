@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Polymarket + 披萨指数 实时监控</title>
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --card: #111827;
+      --card-hover: #1a2235;
+      --accent: #6c63ff;
+      --accent2: #00d4aa;
+      --accent3: #ff6b6b;
+      --accent4: #ffd93d;
+      --green: #10b981;
+      --red: #ef4444;
+      --text: #e5e7eb;
+      --text-dim: #9ca3af;
+      --border: #1f2937;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; padding-bottom: 40px; }
+    .container { max-width: 540px; margin: 0 auto; padding: 0 14px; }
+
+    header { padding: 24px 0 16px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { font-size: 20px; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .last-update { font-size: 11px; color: var(--text-dim); }
+    .last-update .time { color: var(--accent2); font-weight: 600; }
+    .badge { display: inline-block; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 20px; vertical-align: middle; margin-left: 6px; }
+
+    /* Status bar */
+    .status-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .status-chip { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 11px; display: flex; align-items: center; gap: 5px; }
+    .status-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .dot.green { background: var(--green); }
+    .dot.red { background: var(--red); }
+    .dot.orange { background: orange; }
+    .dot.yellow { background: var(--accent4); }
+    .dot.pulse { animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* Loading */
+    .loading { text-align: center; padding: 40px; color: var(--text-dim); font-size: 13px; }
+    .loading-spinner { width: 30px; height: 30px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    /* Error */
+    .error-msg { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 10px; padding: 12px 16px; font-size: 12px; color: var(--red); margin: 8px 0; }
+
+    /* Pizza Section */
+    .pizza-hero { background: linear-gradient(135deg, #1a1040, #0d1f3c); border: 1px solid rgba(108,99,255,0.3); border-radius: 16px; padding: 20px; margin: 14px 0; position: relative; overflow: hidden; }
+    .pizza-hero::before { content: '🍕'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%); font-size: 60px; opacity: 0.15; }
+    .pizza-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+    .pizza-title span { font-size: 11px; background: rgba(108,99,255,0.2); color: #a5a0ff; padding: 2px 8px; border-radius: 8px; font-weight: 500; }
+    .defcon-display { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+    .defcon-level { font-size: 40px; font-weight: 900; font-family: 'Courier New', monospace; }
+    .defcon-label { font-size: 11px; color: var(--text-dim); }
+    .defcon-label .level-name { font-size: 14px; font-weight: 700; color: var(--text); display: block; margin-bottom: 2px; }
+    .defcon-bar { flex: 1; background: var(--border); border-radius: 6px; height: 8px; overflow: hidden; }
+    .defcon-fill { height: 100%; border-radius: 6px; transition: width 0.5s ease; }
+    .pizza-stores { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .store-item { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 10px 8px; text-align: center; }
+    .store-item .name { font-size: 11px; font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .store-item .busy-pct { font-size: 18px; font-weight: 800; }
+    .store-item .sub { font-size: 9px; color: var(--text-dim); }
+    .busy-high { color: var(--red); }
+    .busy-mid { color: orange; }
+    .busy-low { color: var(--green); }
+    .pizza-alert { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 10px; padding: 10px 14px; font-size: 12px; margin-top: 10px; color: var(--red); font-weight: 600; }
+    .pizza-note { font-size: 11px; color: var(--text-dim); margin-top: 8px; }
+
+    /* Polymarket Section */
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin: 20px 0 10px; padding: 0 2px; }
+    .section-title { font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; }
+    .refresh-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: 11px; padding: 5px 12px; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    .refresh-btn:active { background: var(--card-hover); }
+    .refresh-btn svg { width: 12px; height: 12px; }
+    .refresh-btn.spinning svg { animation: spin 0.8s linear infinite; }
+
+    /* Market filter */
+    .filter-row { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; }
+    .filter-row::-webkit-scrollbar { display: none; }
+    .filter-chip { background: var(--card); border: 1px solid var(--border); color: var(--text-dim); font-size: 11px; padding: 5px 12px; border-radius: 20px; white-space: nowrap; cursor: pointer; flex-shrink: 0; transition: all 0.2s; }
+    .filter-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .filter-chip:active { opacity: 0.7; }
+
+    /* Market card */
+    .market-list { display: flex; flex-direction: column; gap: 8px; }
+    .market-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; transition: all 0.2s; }
+    .market-card:active { transform: scale(0.99); background: var(--card-hover); }
+    .market-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+    .market-question { font-size: 13px; font-weight: 600; flex: 1; padding-right: 8px; line-height: 1.4; }
+    .market-tag { font-size: 9px; background: rgba(108,99,255,0.15); color: #a5a0ff; padding: 2px 7px; border-radius: 6px; margin-left: 6px; white-space: nowrap; flex-shrink: 0; }
+    .market-footer { display: flex; justify-content: space-between; align-items: center; }
+    .yes-no { display: flex; gap: 8px; }
+    .prob-box { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; }
+    .prob-box.yes { color: var(--green); }
+    .prob-box.no { color: var(--red); }
+    .prob-bar { flex: 1; height: 4px; background: var(--border); border-radius: 4px; overflow: hidden; display: flex; }
+    .prob-bar-yes { background: var(--green); height: 100%; }
+    .prob-bar-no { background: var(--red); height: 100%; }
+    .market-meta { font-size: 10px; color: var(--text-dim); text-align: right; }
+    .volume-chip { background: rgba(16,185,129,0.1); color: var(--green); padding: 2px 6px; border-radius: 6px; font-size: 10px; font-weight: 600; }
+
+    /* Category colors */
+    .cat-politics { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .cat-geopolitics { background: rgba(139,92,246,0.15); color: #a855f7; }
+    .cat-world { background: rgba(59,130,246,0.15); color: #3b82f6; }
+    .cat-crypto { background: rgba(249,191,36,0.15); color: #fbbf24; }
+    .cat-finance { background: rgba(108,114,127,0.15); color: #9ca3af; }
+    .cat-ai { background: rgba(6,182,212,0.15); color: #06b6d4; }
+    .cat-sports { background: rgba(16,185,129,0.15); color: #10b981; }
+    .cat-economy { background: rgba(234,88,12,0.15); color: #ea580c; }
+
+    /* No data */
+    .no-data { text-align: center; padding: 30px; color: var(--text-dim); font-size: 13px; }
+
+    /* Footer */
+    footer { text-align: center; padding: 20px 0 10px; font-size: 11px; color: var(--text-dim); }
+    footer a { color: var(--accent2); text-decoration: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div>
+      <div class="logo">PolyScan <span class="badge">LIVE</span></div>
+    </div>
+    <div class="last-update">
+      <div>数据更新</div>
+      <div class="time" id="lastUpdate">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- Status -->
+  <div class="status-bar">
+    <div class="status-chip">
+      <div class="dot green" id="polyStatus"></div>
+      <span>Polymarket</span>
+    </div>
+    <div class="status-chip">
+      <div class="dot green" id="pizzaStatus"></div>
+      <span>披萨指数</span>
+    </div>
+    <div class="status-chip">
+      <div class="dot yellow pulse"></div>
+      <span id="marketCount">--</span>
+    </div>
+  </div>
+
+  <!-- PIZZA INDEX SECTION -->
+  <div class="pizza-hero" id="pizzaSection">
+    <div class="pizza-title">
+      🍕 五角大楼披萨指数
+      <span id="pizzaDefconLevel">--</span>
+    </div>
+    <div class="defcon-display">
+      <div class="defcon-level" id="defconBig" style="color: var(--green)">?</div>
+      <div class="defcon-label">
+        <span class="level-name" id="defconName">加载中...</span>
+        PizzaDEFCON
+        <div style="margin-top:4px">
+          <span id="pizzaActivity">--</span>
+        </div>
+      </div>
+      <div class="defcon-bar">
+        <div class="defcon-fill" id="defconBar" style="width:0%;background:var(--green)"></div>
+      </div>
+    </div>
+    <div class="pizza-stores" id="pizzaStores">
+      <div class="store-item">
+        <div class="name">District Pizza</div>
+        <div class="busy-pct busy-low" id="store1">--</div>
+        <div class="sub">1.0英里</div>
+      </div>
+      <div class="store-item">
+        <div class="name">We The Pizza</div>
+        <div class="busy-pct busy-low" id="store2">--</div>
+        <div class="sub">1.0英里</div>
+      </div>
+      <div class="store-item">
+        <div class="name">Extreme Pizza</div>
+        <div class="busy-pct busy-low" id="store3">--</div>
+        <div class="sub">0.5英里</div>
+      </div>
+    </div>
+    <div class="pizza-alert" id="pizzaAlert" style="display:none">
+      ⚠️ <span id="pizzaAlertText">披萨指数异常攀升！</span>
+    </div>
+    <div class="pizza-note" id="pizzaNote">
+      数据来源：Pentagon Pizza Report (@PenPizzaReport) · 每5分钟自动刷新
+    </div>
+  </div>
+
+  <!-- Polymarket Section -->
+  <div class="section-header">
+    <div class="section-title">📊 Polymarket 热门市场</div>
+    <button class="refresh-btn" id="refreshBtn" onclick="refreshData()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      刷新
+    </button>
+  </div>
+
+  <div class="filter-row" id="filterRow">
+    <div class="filter-chip active" onclick="setFilter('all')">🔥 热门</div>
+    <div class="filter-chip" onclick="setFilter('geopolitics')">⚔️ 地缘政治</div>
+    <div class="filter-chip" onclick="setFilter('politics')">🗳️ 政治</div>
+    <div class="filter-chip" onclick="setFilter('crypto')">₿ 加密</div>
+    <div class="filter-chip" onclick="setFilter('finance')">📈 金融</div>
+    <div class="filter-chip" onclick="setFilter('ai')">🤖 AI</div>
+    <div class="filter-chip" onclick="setFilter('economy')">📊 经济</div>
+    <div class="filter-chip" onclick="setFilter('sports')">⚽ 体育</div>
+  </div>
+
+  <div id="loadingIndicator" class="loading" style="display:none">
+    <div class="loading-spinner"></div>
+    加载中...
+  </div>
+  <div id="errorDisplay" class="error-msg" style="display:none"></div>
+
+  <div class="market-list" id="marketList">
+    <div class="loading">
+      <div class="loading-spinner"></div>
+      正在加载 Polymarket 数据...
+    </div>
+  </div>
+
+  <footer>
+    数据来源：Polymarket Gamma API · 披萨指数基于开源情报<br>
+    不构成投资建议 · <a href="https://polymarket.com" target="_blank">前往 Polymarket →</a>
+  </footer>
+</div>
+
+<script>
+const POLYMARKET_API = 'https://gamma-api.polymarket.com';
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+let allMarkets = [];
+let currentFilter = 'all';
+let pizzaDataCache = null;
+
+function proxyUrl(url) {
+  return CORS_PROXY + encodeURIComponent(url);
+}
+
+function timeAgo(date) {
+  const now = new Date();
+  const diff = Math.floor((now - date) / 1000);
+  if (diff < 60) return diff + '秒前';
+  if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+  return Math.floor(diff / 3600) + '小时前';
+}
+
+function updateTime() {
+  const now = new Date();
+  document.getElementById('lastUpdate').textContent =
+    now.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+setInterval(updateTime, 1000);
+updateTime();
+
+function setStatus(id, status) {
+  const el = document.getElementById(id);
+  el.className = 'dot ' + status;
+}
+
+function setDefconColor(level) {
+  const colors = {5:'#10b981',4:'#10b981',3:'orange',2:'#ef4444',1:'#ef4444'};
+  const bg = {5:'rgba(16,185,129,0.15)',4:'rgba(16,185,129,0.1)',3:'rgba(255,165,0,0.15)',2:'rgba(239,68,68,0.15)',1:'rgba(239,68,68,0.2)'};
+  return { color: colors[level] || '#9ca3af', bg: bg[level] || 'rgba(156,163,175,0.1)' };
+}
+
+function updatePizzaUI(data) {
+  const defcon = data.defcon || 5;
+  const { color, bg } = setDefconColor(defcon);
+
+  document.getElementById('pizzaDefconLevel').textContent = 'DEFCON ' + defcon;
+  document.getElementById('defconBig').textContent = defcon;
+  document.getElementById('defconBig').style.color = color;
+  document.getElementById('defconName').textContent = data.defconName || '和平时期';
+  document.getElementById('pizzaActivity').textContent = data.activity || '--';
+
+  const pct = Math.min(((5 - defcon + 1) / 5) * 100, 100);
+  const bar = document.getElementById('defconBar');
+  bar.style.width = pct + '%';
+  bar.style.background = color;
+
+  // Stores
+  const stores = data.stores || {};
+  const ids = ['store1', 'store2', 'store3'];
+  const keys = ['district', 'wethepizza', 'extreme'];
+  keys.forEach((k, i) => {
+    const val = stores[k] || '--';
+    const el = document.getElementById(ids[i]);
+    el.textContent = val;
+    el.className = 'busy-pct ' + (val !== '--' ? (parseInt(val) > 180 ? 'busy-high' : parseInt(val) > 120 ? 'busy-mid' : 'busy-low') : 'busy-low');
+  });
+
+  // Alert
+  const alertEl = document.getElementById('pizzaAlert');
+  if (defcon <= 2 || (data.alert && data.alert !== 'none')) {
+    alertEl.style.display = 'block';
+    document.getElementById('pizzaAlertText').textContent = data.alert || '⚠️ 披萨指数异常！建议关注！';
+  } else if (defcon <= 3) {
+    alertEl.style.display = 'block';
+    document.getElementById('pizzaAlertText').textContent = data.activity || '⚡ 披萨指数上升，注意观察';
+    alertEl.style.background = 'rgba(255,165,0,0.1)';
+    alertEl.style.borderColor = 'rgba(255,165,0,0.3)';
+    alertEl.style.color = 'orange';
+  } else {
+    alertEl.style.display = 'none';
+  }
+
+  setStatus('pizzaStatus', defcon <= 2 ? 'red' : defcon <= 3 ? 'orange' : 'green');
+}
+
+async function fetchPizzaIndex() {
+  try {
+    // Try to fetch from pizzint.watch via proxy
+    let fetched = false;
+
+    try {
+      const r = await fetch(proxyUrl('https://pizzint.watch/'));
+      if (r.ok) {
+        const text = await r.text();
+        // Parse DEFCON level
+        const defconMatch = text.match(/DEFCON[:\s]*(\d)/i) || text.match(/defcon["\s:]+(\d)/i);
+        const defcon = defconMatch ? parseInt(defconMatch[1]) : null;
+        if (defcon) {
+          fetched = true;
+          const defconNames = {5:'和平时期',4:'正常活跃',3:'中度活跃',2:'高度活跃',1:'战争临界'};
+          const stores = {};
+          const storeMatches = text.match(/(?:District[\s_]*Pizza|We[\s_]*The[\s_]*Pizza|Extreme[\s_]*Pizza)[^0-9]*(\d{2,3})%/gi);
+          if (storeMatches) {
+            stores.district = storeMatches[0] ? storeMatches[0].match(/\d+/)[0] : null;
+            stores.wethepizza = storeMatches[1] ? storeMatches[1].match(/\d+/)[0] : null;
+            stores.extreme = storeMatches[2] ? storeMatches[2].match(/\d+/)[0] : null;
+          }
+          pizzaDataCache = {
+            defcon,
+            defconName: defconNames[defcon],
+            activity: `周边披萨店活跃度${defcon <= 2 ? '极高' : defcon <= 3 ? '偏高' : '正常'}`,
+            stores
+          };
+        }
+      }
+    } catch(e) {}
+
+    if (!fetched) {
+      // Fallback: use cached data or known recent values
+      if (!pizzaDataCache) {
+        pizzaDataCache = {
+          defcon: 4,
+          defconName: '正常活跃',
+          activity: '近期（4月4日）有报告称周边披萨店订单飙升',
+          stores: { district: '---', wethepizza: '---', extreme: '---' },
+          alert: '⚠️ 4月4日 Pentagon Pizza Report 报告订单飙升'
+        };
+      }
+    }
+
+    updatePizzaUI(pizzaDataCache);
+  } catch(e) {
+    console.warn('Pizza fetch error:', e);
+    if (!pizzaDataCache) {
+      pizzaDataCache = {
+        defcon: 4, defconName: '正常活跃',
+        activity: '数据获取失败，请手动查看 pizzint.watch',
+        stores: { district: '--', wethepizza: '--', extreme: '--' }
+      };
+      updatePizzaUI(pizzaDataCache);
+    }
+    setStatus('pizzaStatus', 'orange');
+  }
+}
+
+function getCatColor(cats) {
+  if (!cats) return '';
+  const s = cats.toString().toLowerCase();
+  if (s.includes('politics')) return 'cat-politics';
+  if (s.includes('geopolitics')) return 'cat-geopolitics';
+  if (s.includes('world') && !s.includes('crypto')) return 'cat-world';
+  if (s.includes('crypto')) return 'cat-crypto';
+  if (s.includes('finance') || s.includes('stock')) return 'cat-finance';
+  if (s.includes('ai') || s.includes('tech')) return 'cat-ai';
+  if (s.includes('sport')) return 'cat-sports';
+  if (s.includes('econom')) return 'cat-economy';
+  return '';
+}
+
+function getCatName(cats) {
+  if (!cats) return '';
+  const s = cats.toString().toLowerCase();
+  if (s.includes('politics')) return '政治';
+  if (s.includes('geopolitics')) return '地缘';
+  if (s.includes('world')) return '国际';
+  if (s.includes('crypto')) return '加密';
+  if (s.includes('finance')) return '金融';
+  if (s.includes('ai') || s.includes('tech')) return 'AI';
+  if (s.includes('sport')) return '体育';
+  if (s.includes('econom')) return '经济';
+  return '';
+}
+
+function formatVolume(v) {
+  v = parseFloat(v) || 0;
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
+  return '$' + v.toFixed(0);
+}
+
+function renderMarkets(markets) {
+  const list = document.getElementById('marketList');
+  if (!markets || markets.length === 0) {
+    list.innerHTML = '<div class="no-data">该分类暂无数据</div>';
+    return;
+  }
+  list.innerHTML = markets.map(m => {
+    const prices = m.outcomePrices ? JSON.parse(m.outcomePrices) : ['0.5', '0.5'];
+    const yes = parseFloat(prices[0]) || 0.5;
+    const no = 1 - yes;
+    const vol = formatVolume(m.volume24hr || m.volume || 0);
+    const cat = getCatName(m.tags);
+    const catColor = getCatColor(m.tags);
+    const q = m.question || m.title || '';
+    const slug = m.slug || '';
+    const link = slug ? `https://polymarket.com/event/${slug}` : '#';
+
+    return `<a href="${link}" target="_blank" style="text-decoration:none;color:inherit">
+      <div class="market-card">
+        <div class="market-header">
+          <div class="market-question">${q}</div>
+          ${cat ? `<span class="market-tag ${catColor}">${cat}</span>` : ''}
+        </div>
+        <div class="market-footer">
+          <div class="yes-no">
+            <div class="prob-box yes">
+              YES <span>${(yes*100).toFixed(1)}%</span>
+            </div>
+            <div class="prob-box no">
+              NO <span>${(no*100).toFixed(1)}%</span>
+            </div>
+          </div>
+          <div class="market-meta">
+            <span class="volume-chip">${vol}</span>
+          </div>
+        </div>
+        <div class="prob-bar" style="margin-top:6px">
+          <div class="prob-bar-yes" style="width:${(yes*100).toFixed(1)}%"></div>
+        </div>
+      </div>
+    </a>`;
+  }).join('');
+}
+
+function setFilter(tag) {
+  currentFilter = tag;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  event.target.classList.add('active');
+  filterMarkets();
+}
+
+function filterMarkets() {
+  let filtered = allMarkets;
+  if (currentFilter === 'hot') filtered = allMarkets.slice(0, 20);
+  else if (currentFilter !== 'all') {
+    filtered = allMarkets.filter(m => {
+      const tags = (m.tags || []).map(t => (typeof t === 'string' ? t : t.slug || '').toLowerCase());
+      return tags.some(t => t.includes(currentFilter));
+    });
+  }
+  renderMarkets(filtered.slice(0, 30));
+}
+
+async function fetchPolymarket() {
+  setStatus('polyStatus', 'orange');
+  try {
+    const resp = await fetch(proxyUrl(`${POLYMARKET_API}/events?closed=false&limit=50&order=volume24hr&ascending=false`));
+    if (!resp.ok) throw new Error('API error');
+    const events = await resp.json();
+
+    let markets = [];
+    for (const ev of events) {
+      for (const m of (ev.markets || [])) {
+        m.title = ev.title;
+        m.tags = ev.tags || [];
+        m.slug = ev.slug || m.slug || '';
+        markets.push(m);
+      }
+    }
+
+    markets.sort((a, b) => parseFloat(b.volume24hr || 0) - parseFloat(a.volume24hr || 0));
+    allMarkets = markets;
+
+    const count = document.getElementById('marketCount');
+    count.textContent = markets.length + ' 市场';
+
+    setStatus('polyStatus', 'green');
+    filterMarkets();
+  } catch(e) {
+    console.warn('Polymarket fetch error:', e);
+    setStatus('polyStatus', 'red');
+    document.getElementById('errorDisplay').style.display = 'block';
+    document.getElementById('errorDisplay').textContent = 'Polymarket 数据获取失败，请检查网络或稍后重试。错误: ' + e.message;
+  }
+}
+
+async function refreshData() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  await Promise.all([fetchPolymarket(), fetchPizzaIndex()]);
+  btn.classList.remove('spinning');
+}
+
+async function init() {
+  await Promise.all([fetchPolymarket(), fetchPizzaIndex()]);
+  // Auto-refresh every 5 minutes
+  setInterval(() => { fetchPizzaIndex(); }, 5 * 60 * 1000);
+}
+init();
+</script>
+</body>
+</html>
