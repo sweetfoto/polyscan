@@ -207,11 +207,20 @@ function fmtP(k,v){return k==='treasury'?v.toFixed(3)+'%':'$'+v.toFixed(2);}
 function updateTime(){$('lu').textContent=fmtH(new Date());}
 setInterval(updateTime,30000);updateTime();
 
+// 最后一次成功获取的数据（网络全挂时使用）
+const FALLBACK = {
+  gold:    {price:4691.10, change:+0.24},
+  silver:  {price:72.62,  change:-0.42},
+  oil:     {price:110.83, change:-0.64},
+  treasury:{price:4.350,  change:+0.02},
+};
+
 function updateCommUI(){
-  const data=lget('data')||{};
+  const data=lget('data')||FALLBACK;
   const ts=parseInt(localStorage.getItem('pcs_ts')||'0');
   for(const k of['gold','silver','oil','treasury']){
-    const d=data[k];if(!d)continue;
+    const d=data[k]||FALLBACK[k];
+    if(!d)continue;
     const pe=$(k+'-p');const ce=$(k+'-c');
     if(pe)pe.textContent=fmtP(k,d.price);
     if(ce){const up=d.change>=0;ce.textContent=(up?'+':'')+d.change.toFixed(2)+'%';ce.className='comm-chg '+(up?'chg-up':'chg-down');}
@@ -220,8 +229,14 @@ function updateCommUI(){
 }
 
 async function fetchAllComm(){
+  // 第1步：立即显示缓存（瞬间）
+  updateCommUI();updateChart(selectedComm);
+  // 第2步：后台获取新数据
   setDot('dComm','orange');
-  try{await Promise.allSettled([fetchYahoo(),fetchTreasury()]);setDot('dComm','green');}catch(e){setDot('dComm','orange');}
+  const results=await Promise.allSettled([fetchYahoo(),fetchTreasury()]);
+  const anySuccess=results.some(r=>r.status==='fulfilled');
+  setDot('dComm',anySuccess?'green':'orange');
+  // 第3步：无论成功失败都用最新数据更新 UI
   updateCommUI();updateChart(selectedComm);
 }
 
@@ -231,41 +246,44 @@ async function fetchYahoo(){
     for(const pf of PROXIES){
       try{
         const r=await fetch(pf(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}?interval=1d&range=5d`),{signal:AbortSignal.timeout(12000)});
-        if(!r.ok)throw new Error();
-        const j=await r.json();const res=j?.chart?.result?.[0];
-        if(!res)throw new Error();
+        const text=await r.text();
+        // 检测是否是 HTML（代理返回错误页面）
+        if(!r.ok||text.startsWith('<!')||text.startsWith('<!--')){console.warn('Yahoo '+k+' bad response');continue;}
+        const j=JSON.parse(text);const res=j?.chart?.result?.[0];
+        if(!res){console.warn('Yahoo '+k+' no result');continue;}
         const ts=res.timestamp||[];const qs=res.Indicators?.quote?.[0]?.close||[];
         const hist=[];for(let i=0;i<ts.length;i++)if(qs[i]!=null)hist.push({t:ts[i]*1000,v:qs[i]});
         if(hist.length>0)lset('h_'+k,hist);
         const meta=res.meta||{};const price=meta.regularMarketPrice;
         const prev=meta.chartPreviousClose||meta.previousClose;
-        if(!price)throw new Error();
+        if(!price){console.warn('Yahoo '+k+' no price');continue;}
         const change=prev?(price-prev)/prev*100:0;
         const data=lget('data')||{};data[k]={price,change};lset('data',data);
         pushHist(k,price);break;
-      }catch(e){}
+      }catch(e){console.warn('Yahoo '+k+' err:',e.message);}
     }
   }
-  localStorage.setItem('pcs_ts',Date.now().toString());
+  lset('ts',Date.now().toString());
 }
 
 async function fetchTreasury(){
   for(const pf of PROXIES){
     try{
       const r=await fetch(pf('https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&download=true'),{signal:AbortSignal.timeout(15000)});
-      if(!r.ok)throw new Error();
-      const t=await r.text();const lns=t.trim().split('\n');
-      if(lns.length<2)throw new Error();
+      const text=await r.text();
+      if(!r.ok||text.startsWith('<!')||text.startsWith('<!--')){console.warn('Treasury bad response');continue;}
+      const lns=text.trim().split('\n');
+      if(lns.length<2){console.warn('Treasury no lines');continue;}
       const hdr=lns[0].split(',').map(h=>h.replace(/"/g,'').trim());
-      const ti=hdr.findIndex(h=>h==='10 Yr');if(ti<0)throw new Error();
+      const ti=hdr.findIndex(h=>h==='10 Yr');if(ti<0){console.warn('Treasury no 10Yr');continue;}
       const row=n=>lns[n].split(',').map(v=>parseFloat(v.replace(/"/g,'').trim()));
       const tenYr=row(lns.length-1)[ti];
       const prevYr=lns.length>=3?row(lns.length-2)[ti]:null;
-      if(!tenYr||isNaN(tenYr))throw new Error();
+      if(!tenYr||isNaN(tenYr)){console.warn('Treasury invalid');continue;}
       const chg=(prevYr&&!isNaN(prevYr))?tenYr-prevYr:0;
       const data=lget('data')||{};data.treasury={price:tenYr,change:chg};lset('data',data);
       pushHist('treasury',tenYr);break;
-    }catch(e){}
+    }catch(e){console.warn('Treasury err:',e.message);}
   }
 }
 
@@ -305,13 +323,14 @@ function updateChart(key){
 }
 
 async function fetchPizza(){
-  setDot('dPizza','orange');
+  restorePizzaCache(); // 第1步：立即显示缓存
+  setDot('dPizza','orange'); // 橙色表示正在刷新
   try{
-    for(const src of[{u:'https://pizzint.watch/',p:u=>`https://corsproxy.io/?${encodeURIComponent(u)}`}]){
+    for(const src of[{u:'https://pizzint.watch/',p:u=>`https://corsproxy.io/?${encodeURIComponent(u)}`},{u:'https://pizzint.watch/',p:u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`}]){
       try{
         const r=await fetch(src.p(src.u),{signal:AbortSignal.timeout(10000)});
-        if(!r.ok)throw new Error();
         const t=await r.text();
+        if(!r.ok||t.startsWith('<!')||t.startsWith('<!--')){console.warn('Pizza proxy bad response');continue;}
         const m=t.match(/DEFCON[:\s]*(\d)/i)||t.match(/defcon["\s:]+(\d)/i);
         const defcon=m?parseInt(m[1]):null;
         if(defcon&&defcon>=1&&defcon<=5){
@@ -331,22 +350,29 @@ async function fetchPizza(){
           else al.style.display='none';
           setDot('dPizza',defcon<=2?'red':defcon<=3?'orange':'green');
           lset('pizza',{defcon,activity});
+          lset('pcs_pizza_ts',Date.now().toString());
           return;
         }
-      }catch(e){}
+      }catch(e){console.warn('Pizza fetch err:',e.message);}
     }
-    setDot('dPizza','orange');$('defconName').textContent='数据获取失败';$('pizzaActivity').textContent='请手动查看 pizzint.watch';
-  }catch(e){setDot('dPizza','orange');$('defconName').textContent='加载失败';}
+    // 全挂时保持橙色，不覆盖已有缓存数据
+  }catch(e){console.warn('Pizza error:',e.message);}
 }
 
 async function fetchPoly(){
+  restorePolyCache();
   setDot('dPoly','orange');
   $('errMsg').style.display='none';
   try{
     const url='https://gamma-api.polymarket.com/events?closed=false&limit=50&order=volume24hr&ascending=false';
     let events=null;
     for(const pf of PROXIES){
-      try{const r=await fetch(pf(url),{signal:AbortSignal.timeout(15000)});if(!r.ok)throw new Error('HTTP '+r.status);events=await r.json();break;}catch(e){}
+      try{
+        const r=await fetch(pf(url),{signal:AbortSignal.timeout(15000)});
+        const text=await r.text();
+        if(!r.ok||text.startsWith('<!')||text.startsWith('<!--'))throw new Error('bad '+r.status);
+        events=JSON.parse(text);break;
+      }catch(e){console.warn('Poly proxy:',e.message);}
     }
     if(!events)throw new Error('All proxies failed');
     const markets=[];
@@ -359,9 +385,15 @@ async function fetchPoly(){
     }
     markets.sort((a,b)=>parseFloat(b.volume24hr||0)-parseFloat(a.volume24hr||0));
     allMarkets=markets;
-    lset('poly',markets);lset('poly_ts',Date.now());
+    lset('poly',markets);lset('pcs_poly_ts',Date.now().toString());
     setDot('dPoly','green');filterMarkets();
-  }catch(e){console.warn('Poly error:',e);setDot('dPoly','red');}
+  }catch(e){
+    console.warn('Poly error:',e.message);
+    setDot('dPoly','orange');
+    if(lget('poly')===null){
+      $('marketList').innerHTML='<div class="no-data">Poly 数据加载失败<br><span style="font-size:10px">请检查网络后点右上角刷新</span></div>';
+    }
+  }
 }
 
 function restorePolyCache(){
