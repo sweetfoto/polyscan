@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>市场监控面板</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:#0a0e17;--card:#111827;--card-hover:#1a2235;--accent:#6c63ff;--accent2:#00d4aa;
+      --green:#10b981;--red:#ef4444;--text:#e5e7eb;--text-dim:#9ca3af;--border:#1f2937;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,sans-serif; font-size:14px; line-height:1.6; padding-bottom:60px; }
+    .container { max-width:540px; margin:0 auto; padding:0 14px; }
+    header { padding:18px 0 10px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+    .logo { font-size:18px; font-weight:800; background:linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .header-right { display:flex; align-items:center; gap:8px; }
+    .last-update { font-size:11px; color:var(--text-dim); }
+    .last-update span { color:var(--accent2); font-weight:600; }
+    .refresh-global { background:var(--accent); border:none; color:#fff; font-size:11px; padding:6px 14px; border-radius:20px; cursor:pointer; display:flex; align-items:center; gap:5px; font-weight:600; }
+    .refresh-global:active { opacity:0.8; }
+    .refresh-global svg { width:12px; height:12px; }
+    .refresh-global.spinning svg { animation:spin 0.8s linear infinite; }
+    .status-bar { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+    .status-chip { background:var(--card); border:1px solid var(--border); border-radius:20px; padding:4px 10px; font-size:10px; display:flex; align-items:center; gap:4px; }
+    .dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; }
+    .dot.green { background:var(--green); }
+    .dot.red { background:var(--red); }
+    .dot.orange { background:orange; }
+    .dot.pulse { animation:pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .error-msg { background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:9px 12px; font-size:11px; color:var(--red); margin:7px 0; display:none; }
+    .section-header { display:flex; justify-content:space-between; align-items:center; margin:16px 0 8px; }
+    .section-title { font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:1.5px; }
+    .refresh-btn { background:var(--card); border:1px solid var(--border); color:var(--text); font-size:10px; padding:4px 10px; border-radius:20px; cursor:pointer; display:flex; align-items:center; gap:4px; }
+    .refresh-btn:active { background:var(--card-hover); }
+    .refresh-btn svg { width:10px; height:10px; }
+    .refresh-btn.spinning svg { animation:spin 0.8s linear infinite; }
+    .index-scroll { display:flex; gap:8px; overflow-x:auto; padding:2px 0 8px; scrollbar-width:none; }
+    .index-scroll::-webkit-scrollbar { display:none; }
+    .index-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px; min-width:110px; text-align:center; flex-shrink:0; cursor:pointer; transition:all 0.2s; }
+    .index-card:active { transform:scale(0.97); }
+    .index-card.up { border-color:rgba(16,185,129,0.3); }
+    .index-card.down { border-color:rgba(239,68,68,0.3); }
+    .index-name { font-size:10px; color:var(--text-dim); margin-bottom:4px; }
+    .index-price { font-size:16px; font-weight:800; }
+    .index-chg { font-size:11px; font-weight:600; margin-top:2px; }
+    .chg-up { color:var(--green); }
+    .chg-down { color:var(--red); }
+    .watchlist-input { display:flex; gap:6px; margin-bottom:10px; }
+    .watchlist-input input { flex:1; background:var(--card); border:1px solid var(--border); color:var(--text); font-size:13px; padding:8px 12px; border-radius:10px; outline:none; }
+    .watchlist-input input:focus { border-color:var(--accent); }
+    .watchlist-input input::placeholder { color:var(--text-dim); }
+    .exchange-select { background:var(--card); border:1px solid var(--border); color:var(--text); font-size:13px; padding:8px 8px; border-radius:10px; outline:none; cursor:pointer; }
+    .add-btn { background:var(--accent); border:none; color:#fff; font-size:12px; padding:8px 16px; border-radius:10px; cursor:pointer; font-weight:600; white-space:nowrap; }
+    .add-btn:active { opacity:0.8; }
+    .watchlist-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    @media(max-width:380px){ .watchlist-grid{grid-template-columns:1fr; gap:6px;} }
+    .wl-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; position:relative; cursor:pointer; transition:all 0.2s; }
+    .wl-card:active { transform:scale(0.98); }
+    .wl-card.up { border-color:rgba(16,185,129,0.3); }
+    .wl-card.down { border-color:rgba(239,68,68,0.3); }
+    .wl-close { position:absolute; top:6px; right:8px; background:rgba(255,255,255,0.1); border:none; color:var(--text-dim); font-size:14px; width:20px; height:20px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
+    .wl-close:active { background:rgba(239,68,68,0.3); color:var(--red); }
+    .wl-name { font-size:11px; color:var(--text-dim); margin-bottom:3px; }
+    .wl-code { font-size:10px; color:var(--text-dim); opacity:0.7; }
+    .wl-price { font-size:18px; font-weight:800; margin-top:4px; }
+    .wl-chg { font-size:12px; font-weight:600; margin-top:2px; }
+    .wl-empty { text-align:center; padding:16px; color:var(--text-dim); font-size:11px; }
+    .crypto-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    .crypto-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 12px; cursor:pointer; transition:all 0.2s; }
+    .crypto-card:active { transform:scale(0.97); }
+    .crypto-card.up { border-color:rgba(16,185,129,0.3); }
+    .crypto-card.down { border-color:rgba(239,68,68,0.3); }
+    .crypto-icon { font-size:22px; display:block; margin-bottom:4px; }
+    .crypto-name { font-size:12px; font-weight:700; }
+    .crypto-code { font-size:10px; color:var(--text-dim); }
+    .crypto-price { font-size:18px; font-weight:800; margin-top:6px; }
+    .crypto-chg { font-size:12px; font-weight:600; margin-top:2px; }
+    .treasury-card { background:linear-gradient(135deg,rgba(168,85,247,0.15),rgba(108,99,255,0.15)); border:1px solid rgba(168,85,247,0.3); border-radius:12px; padding:16px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; transition:all 0.2s; }
+    .treasury-card:active { transform:scale(0.98); }
+    .treasury-left .label { font-size:11px; color:var(--text-dim); }
+    .treasury-left .name { font-size:14px; font-weight:700; margin-top:2px; }
+    .treasury-yield { font-size:28px; font-weight:900; color:var(--accent); }
+    .treasury-unit { font-size:14px; color:var(--text-dim); font-weight:400; }
+    .treasury-chg { font-size:12px; font-weight:600; margin-top:2px; }
+    .treasury-date { font-size:10px; color:var(--text-dim); margin-top:4px; }
+    .market-list { display:flex; flex-direction:column; gap:8px; }
+    .market-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; transition:all 0.2s; }
+    .market-card:active { transform:scale(0.99); background:var(--card-hover); }
+    .market-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+    .market-q { font-size:12px; font-weight:600; flex:1; padding-right:8px; line-height:1.4; }
+    .market-tag { font-size:9px; padding:2px 6px; border-radius:4px; flex-shrink:0; font-weight:600; }
+    .tag-geo { background:rgba(139,92,246,0.15); color:#a855f7; }
+    .tag-pol { background:rgba(239,68,68,0.15); color:#ef4444; }
+    .tag-cry { background:rgba(249,191,36,0.15); color:#fbbf24; }
+    .tag-fin { background:rgba(108,114,127,0.15); color:#9ca3af; }
+    .tag-ai { background:rgba(6,182,212,0.15); color:#06b6d4; }
+    .tag-eco { background:rgba(234,88,12,0.15); color:#ea580c; }
+    .tag-spo { background:rgba(16,185,129,0.15); color:#10b981; }
+    .tag-wld { background:rgba(59,130,246,0.15); color:#3b82f6; }
+    .tag-def { background:rgba(108,99,255,0.15); color:#a5a0ff; }
+    .market-footer { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; }
+    .prob-row { display:flex; gap:10px; font-size:13px; font-weight:700; }
+    .prob-yes { color:var(--green); }
+    .prob-no { color:var(--red); }
+    .vol-chip { font-size:10px; background:rgba(16,185,129,0.1); color:var(--green); padding:2px 6px; border-radius:4px; font-weight:600; }
+    .prob-bar { flex:1; min-width:120px; height:4px; background:var(--border); border-radius:4px; overflow:hidden; display:flex; margin-top:6px; }
+    .bar-yes { background:var(--green); height:100%; }
+    .bar-no { background:var(--red); height:100%; }
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; display:none; align-items:flex-end; justify-content:center; }
+    .modal-overlay.show { display:flex; }
+    .modal-content { background:var(--card); border:1px solid var(--border); border-radius:16px 16px 0 0; width:100%; max-width:540px; max-height:85vh; overflow-y:auto; padding:16px; animation:slideUp 0.3s ease; }
+    @keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .modal-title { font-size:15px; font-weight:700; }
+    .modal-close { background:rgba(255,255,255,0.1); border:none; color:var(--text); font-size:18px; width:28px; height:28px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+    .modal-chart-wrap { position:relative; height:200px; }
+    canvas { width:100% !important; height:200px !important; }
+    .modal-meta { font-size:11px; color:var(--text-dim); margin-top:8px; text-align:center; }
+    .spinner { width:24px; height:24px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto; }
+    .loading { text-align:center; padding:20px; color:var(--text-dim); font-size:11px; }
+    .no-data { text-align:center; padding:16px; color:var(--text-dim); font-size:11px; }
+    .no-data small { display:block; margin-top:4px; opacity:0.7; }
+    footer { text-align:center; padding:16px 0 8px; font-size:10px; color:var(--text-dim); }
+    footer a { color:var(--accent2); text-decoration:none; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">📊 市场监控</div>
+    <div class="header-right">
+      <div class="last-update">更新 <span id="lastUpdate">--:--</span></div>
+      <button class="refresh-global" id="refreshGlobal" onclick="doRefreshAll()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        刷新
+      </button>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <div class="status-chip"><div class="dot green pulse" id="dotA"></div><span>A股</span></div>
+    <div class="status-chip"><div class="dot green pulse" id="dotCrypto"></div><span>加密</span></div>
+    <div class="status-chip"><div class="dot green pulse" id="dotBond"></div><span>美债</span></div>
+    <div class="status-chip"><div class="dot green pulse" id="dotPoly"></div><span>Poly</span></div>
+  </div>
+
+  <div class="error-msg" id="errorMsg"></div>
+
+  <div class="section-header">
+    <div class="section-title">🏛️ A股大盘</div>
+    <button class="refresh-btn" id="refreshA" onclick="refreshA()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      刷新
+    </button>
+  </div>
+  <div class="index-scroll">
+    <div class="index-card" id="idx-sh"><div class="index-name">上证指数</div><div class="index-price" id="idx-sh-p">--</div><div class="index-chg" id="idx-sh-c">--</div></div>
+    <div class="index-card" id="idx-sz"><div class="index-name">深证成指</div><div class="index-price" id="idx-sz-p">--</div><div class="index-chg" id="idx-sz-c">--</div></div>
+    <div class="index-card" id="idx-cy"><div class="index-name">创业板指</div><div class="index-price" id="idx-cy-p">--</div><div class="index-chg" id="idx-cy-c">--</div></div>
+    <div class="index-card" id="idx-kc"><div class="index-name">科创50</div><div class="index-price" id="idx-kc-p">--</div><div class="index-chg" id="idx-kc-c">--</div></div>
+  </div>
+
+  <div class="section-header">
+    <div class="section-title">⭐ 自选股</div>
+    <button class="refresh-btn" id="refreshWl" onclick="refreshWatchlist()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      刷新
+    </button>
+  </div>
+  <div class="watchlist-input">
+    <input type="text" id="stockInput" placeholder="股票代码 如 600000" maxlength="6">
+    <select class="exchange-select" id="exchangeSelect">
+      <option value="SH">沪市</option>
+      <option value="SZ">深市</option>
+    </select>
+    <button class="add-btn" onclick="addStock()">添加</button>
+  </div>
+  <div class="watchlist-grid" id="watchlistGrid">
+    <div class="wl-empty">点击上方添加自选股，数据自动保存</div>
+  </div>
+
+  <div class="section-header">
+    <div class="section-title">₿ 加密货币</div>
+    <button class="refresh-btn" id="refreshCrypto" onclick="refreshCrypto()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      刷新
+    </button>
+  </div>
+  <div class="crypto-grid">
+    <div class="crypto-card" id="crypto-btc" onclick="showCryptoChart('BTC')">
+      <span class="crypto-icon">₿</span>
+      <div class="crypto-name">比特币</div>
+      <div class="crypto-code">BTC/USD</div>
+      <div class="crypto-price" id="btc-p">--</div>
+      <div class="crypto-chg" id="btc-c">--</div>
+    </div>
+    <div class="crypto-card" id="crypto-eth" onclick="showCryptoChart('ETH')">
+      <span class="crypto-icon">Ξ</span>
+      <div class="crypto-name">以太坊</div>
+      <div class="crypto-code">ETH/USD</div>
+      <div class="crypto-price" id="eth-p">--</div>
+      <div class="crypto-chg" id="eth-c">--</div>
+    </div>
+  </div>
+
+  <div class="section-header">
+    <div class="section-title">📊 美国国债</div>
+    <button class="refresh-btn" id="refreshBond" onclick="refreshBond()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      刷新
+    </button>
+  </div>
+  <div class="treasury-card" id="treasuryCard" onclick="showBondChart()">
+    <div class="treasury-left">
+      <div class="label">美国10年期国债</div>
+      <div class="name">U.S. Treasury 10Y</div>
+      <div class="treasury-chg" id="treasury-c">--</div>
+      <div class="treasury-date" id="treasury-date">--</div>
+    </div>
+    <div style="text-align:right">
+      <div class="treasury-yield"><span id="treasury-p">--</span><span class="treasury-unit">%</span></div>
+    </div>
+  </div>
+
+  <div class="section-header">
+    <div class="section-title">🎯 Polymarket 热门</div>
+    <button class="refresh-btn" id="refreshPoly" onclick="refreshPoly()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      刷新
+    </button>
+  </div>
+  <div class="market-list" id="marketList">
+    <div class="loading"><div class="spinner"></div>加载中...</div>
+  </div>
+
+  <footer>市场监控面板 · 数据仅供参考<br>A股/MX Data · 加密/CryptoCompare · 美债/U.S.Treasury · 预测/Polymarket</footer>
+</div>
+
+<div class="modal-overlay" id="chartModal" onclick="closeModal(event)">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">--</div>
+      <button class="modal-close" onclick="hideModal()">×</button>
+    </div>
+    <div class="modal-chart-wrap">
+      <canvas id="modalChart"></canvas>
+    </div>
+    <div class="modal-meta" id="modalMeta">--</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const MX_API_KEY = 'mkt_uHqHPCJSFYOo1Aj-f3AQMvzgTE4HGrnX9JS_TuKtS0g';
+  const MX_BASE = 'https://mkapi2.dfcfs.com/openapi/quote/v1/security/marketData';
+  const CRYPTO_FULL = 'https://min-api.cryptocompare.com/data/pricemultifull?fsyms=BTC,ETH&tsyms=USD';
+  const CRYPTO_HISTO = (sym) => `https://min-api.cryptocompare.com/data/v2/histohour?fsym=${sym}&tsym=USD&limit=48`;
+  const TREASURY_URL = 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&download=true';
+  const POLY_URL = 'https://clob.polymarket.com/markets?limit=10';
+  const PROXIES = [
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  ];
+
+  const INDEX_CODES = [
+    {id:'sh',name:'上证指数',exchange:'SH',code:'000001'},
+    {id:'sz',name:'深证成指',exchange:'SZ',code:'399001'},
+    {id:'cy',name:'创业板指',exchange:'SZ',code:'399006'},
+    {id:'kc',name:'科创50',   exchange:'SH',code:'000688'},
+  ];
+
+  const KNOWN_NAMES = {
+    '000001':'上证指数','399001':'深证成指','399006':'创业板指','000688':'科创50',
+    '600000':'浦发银行','600519':'贵州茅台','600036':'招商银行','601318':'中国平安',
+    '000858':'五粮液','000333':'美的集团','002594':'比亚迪','300750':'宁德时代',
+    '688981':'中芯国际','600309':'万华化学',
+  };
+
+  const $ = id => document.getElementById(id);
+  const fmtTime = d => d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+  const fmtPrice = (v, d=2) => (isNaN(v)||v==null) ? '--' : v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+  const setDot = (id,color) => {
+    const e=$(id);
+    if(!e)return;
+    const base = (color==='green'?'green':color==='red'?'red':color==='orange'?'orange':'');
+    e.className='dot '+base+' pulse';
+  };
+
+  function lget(k){try{return JSON.parse(localStorage.getItem('mm_'+k));}catch(e){return null;}}
+  function lset(k,v){try{localStorage.setItem('mm_'+k,JSON.stringify(v));}catch(e){}}
+
+  function showError(msg){
+    const el=$('errorMsg');
+    el.textContent=msg;el.style.display='block';
+    setTimeout(()=>el.style.display='none',5000);
+  }
+
+  function updateTime(){$('lastUpdate').textContent=fmtTime(new Date());}
+  setInterval(updateTime,30000);updateTime();
+
+  // ---- MX API ----
+  async function fetchMX(exchange,code,fields){
+    const url=`${MX_BASE}?exchange=${exchange}&securityCode=${code}&fields=${fields}&apikey=${MX_API_KEY}`;
+    try{
+      const r=await fetch(url,{signal:AbortSignal.timeout(8000)});
+      if(!r.ok)return null;
+      const j=await r.json();
+      return j?.data?.[0]||null;
+    }catch(e){console.warn('MX:',e.message);return null;}
+  }
+
+  async function refreshA(){
+    $('refreshA').classList.add('spinning');
+    setDot('dotA','orange');
+    for(const idx of INDEX_CODES){
+      const d=await fetchMX(idx.exchange,idx.code,'SECURITY_CODE,NEWEST_PRICE,CHG,PCHG');
+      const pEl=$(`idx-${idx.id}-p`);
+      const cEl=$(`idx-${idx.id}-c`);
+      const card=$(`idx-${idx.id}`);
+      if(!d||d.NEWEST_PRICE==null){
+        if(pEl)pEl.textContent='--';
+        if(cEl)cEl.textContent='加载失败';
+        continue;
+      }
+      const price=parseFloat(d.NEWEST_PRICE);
+      const chg=parseFloat(d.PCHG);
+      if(pEl)pEl.textContent=fmtPrice(price,2);
+      if(cEl){
+        if(!isNaN(chg)){
+          cEl.textContent=(chg>=0?'+':'')+chg.toFixed(2)+'%';
+          cEl.className='index-chg '+(chg>=0?'chg-up':'chg-down');
+          if(card)card.className='index-card '+(chg>=0?'up':'down');
+        } else { cEl.textContent='--'; }
+      }
+    }
+    setDot('dotA','green');
+    $('refreshA').classList.remove('spinning');
+  }
+
+  // ---- Watchlist ----
+  function getWatchlist(){return lget('watchlist')||[];}
+  function saveWatchlist(list){lset('watchlist',list);}
+
+  async function addStock(){
+    const input=$('stockInput');
+    const code=input.value.trim().replace(/[^0-9]/g,'');
+    if(code.length!==6){showError('请输入6位股票代码');return;}
+    const exchange=$('exchangeSelect').value;
+    const list=getWatchlist();
+    if(list.some(s=>s.code===code&&s.exchange===exchange)){showError('已在自选列表中');return;}
+    let name=KNOWN_NAMES[code]||null;
+    if(!name){
+      const d=await fetchMX(exchange,code,'SECURITY_CODE,NEWEST_PRICE,CHG,PCHG');
+      name=d?.SECURITY_NAME||null;
+    }
+    list.push({code,exchange,name:name||code,nameSet:!!name});
+    saveWatchlist(list);
+    input.value='';
+    renderWatchlist();
+  }
+
+  function removeStock(idx,e){
+    e.stopPropagation();
+    const list=getWatchlist();
+    list.splice(idx,1);
+    saveWatchlist(list);
+    renderWatchlist();
+  }
+
+  async function renderWatchlist(){
+    const grid=$('watchlistGrid');
+    const list=getWatchlist();
+    if(list.length===0){grid.innerHTML='<div class="wl-empty">点击上方添加自选股，数据自动保存</div>';return;}
+    grid.innerHTML=list.map((s,i)=>`
+      <div class="wl-card" id="wl-${i}">
+        <button class="wl-close" onclick="removeStock(${i},event)">×</button>
+        <div class="wl-name">${s.name||s.code}</div>
+        <div class="wl-code">${s.code}</div>
+        <div class="wl-price" id="wl-p-${i}"><div class="spinner" style="width:16px;height:16px;border-width:1.5px;margin:0 auto;border-top-color:var(--accent)"></div></div>
+        <div class="wl-chg" id="wl-c-${i}">--</div>
+      </div>
+    `).join('');
+    for(let i=0;i<list.length;i++){ refreshWlCard(i); }
+  }
+
+  async function refreshWlCard(idx){
+    const list=getWatchlist();
+    if(idx>=list.length)return;
+    const s=list[idx];
+    const d=await fetchMX(s.exchange,s.code,'SECURITY_CODE,NEWEST_PRICE,CHG,PCHG');
+    const pEl=$(`wl-p-${idx}`);
+    const cEl=$(`wl-c-${idx}`);
+    const card=$(`wl-${idx}`);
+    if(!d||d.NEWEST_PRICE==null){
+      if(pEl)pEl.textContent='--';
+      if(cEl)cEl.textContent='加载失败';
+      return;
+    }
+    const price=parseFloat(d.NEWEST_PRICE);
+    const chg=parseFloat(d.PCHG);
+    if(pEl)pEl.textContent=fmtPrice(price,2);
+    if(!isNaN(chg)){
+      if(cEl){cEl.textContent=(chg>=0?'+':'')+chg.toFixed(2)+'%';cEl.className='wl-chg '+(chg>=0?'chg-up':'chg-down');}
+      if(card)card.className='wl-card '+(chg>=0?'up':'down');
+    }
+    if(d.SECURITY_NAME&&!s.nameSet){
+      s.name=d.SECURITY_NAME;s.nameSet=true;saveWatchlist(list);
+      const nameEl=card?.querySelector('.wl-name');
+      if(nameEl)nameEl.textContent=d.SECURITY_NAME;
+    }
+  }
+
+  async function refreshWatchlist(){
+    $('refreshWl').classList.add('spinning');
+    await renderWatchlist();
+    $('refreshWl').classList.remove('spinning');
+  }
+
+  // ---- Crypto ----
+  let cryptoData={};
+  let modalChart=null;
+
+  async function refreshCrypto(){
+    $('refreshCrypto').classList.add('spinning');
+    setDot('dotCrypto','orange');
+    try{
+      const r=await fetch(CRYPTO_FULL,{signal:AbortSignal.timeout(10000)});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const j=await r.json();
+      const btc=j.RAW?.BTC||{};
+      const eth=j.RAW?.ETH||{};
+      if(btc.USDPRICE){
+        const up=btc.CHANGE24HOUR>=0;
+        $('btc-p').textContent='$'+fmtPrice(btc.USDPRICE,2);
+        $('btc-c').textContent=(up?'+':'')+btc.CHANGE24HOUR.toFixed(2)+'%';
+        $('btc-c').className='crypto-chg '+(up?'chg-up':'chg-down');
+        $('crypto-btc').className='crypto-card '+(up?'up':'down');
+        cryptoData.BTC={price:btc.USDPRICE,chg:btc.CHANGE24HOUR};
+      }
+      if(eth.USDPRICE){
+        const up=eth.CHANGE24HOUR>=0;
+        $('eth-p').textContent='$'+fmtPrice(eth.USDPRICE,2);
+        $('eth-c').textContent=(up?'+':'')+eth.CHANGE24HOUR.toFixed(2)+'%';
+        $('eth-c').className='crypto-chg '+(up?'chg-up':'chg-down');
+        $('crypto-eth').className='crypto-card '+(up?'up':'down');
+        cryptoData.ETH={price:eth.USDPRICE,chg:eth.CHANGE24HO
